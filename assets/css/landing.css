@@ -1,0 +1,48 @@
+/* ============================================================
+   SchedViz — Landing / Welcome specific styles
+   ============================================================ */
+
+/* Welcome screen is inside the chat thread, styles are in chat.css */
+/* This file adds any extra landing-page specific overrides */
+
+.landing-quick-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.info-panel {
+  padding: 12px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-top: 12px;
+}
+.info-panel h4 {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.info-panel ul {
+  list-style: none;
+  padding: 0;
+}
+.info-panel li {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.info-panel li::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}

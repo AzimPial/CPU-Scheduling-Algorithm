@@ -1,0 +1,10 @@
+{
+  "name": "schedviz",
+  "version": "2.0.0",
+  "description": "SchedViz - CPU Scheduling Algorithm Visualizer (30 algorithms)",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs"
+  },
+  "license": "MIT"
+}
