@@ -164,6 +164,8 @@ function init() {
     }
   });
 
+  document.addEventListener('schedviz:sidebar-refresh', () => sidebar.refresh());
+
   document.getElementById('btn-new-chat')?.addEventListener('click', () => {
     resetToWelcome(chat, inputBar, sidebar);
   });
@@ -982,7 +984,3 @@ function createTraceControls(container, result, ganttContainer, processes) {
 
   updateTrace(0);
 }
-
-document.addEventListener('schedviz:sidebar-refresh', () => {
-  document.dispatchEvent(new CustomEvent('schedviz:refresh-sidebar'));
-});
