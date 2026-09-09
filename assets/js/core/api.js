@@ -3,7 +3,9 @@
  * Fetch wrapper for Algo backend API calls.
  */
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL =
+  (typeof localStorage !== 'undefined' && localStorage.getItem('algo_api_url')) ||
+  'https://algo-backend-lia7.onrender.com';
 
 /**
  * Make an authenticated API request.

@@ -53,6 +53,8 @@ A `render.yaml` Blueprint is included in the repo so Render creates the service 
 5. Click **Apply** → wait for a green **Live** status (~2–5 min).
 6. **Copy the service URL**, e.g. `https://algo-backend.onrender.com`.
 
+> This project's live backend is deployed at **`https://algo-backend-lia7.onrender.com`**.
+
 > When the code changes after this, deploy the update with **Manual Deploy** → <latest commit> inside the service, or push and Render rebuilds on new commits (depending on the auto-deploy setting).
 
 ---
@@ -81,11 +83,11 @@ Create a **Web Service** instead of a Blueprint:
 The whole app talks to the API through one file: `assets/js/core/api.js`:
 
 ```js
-const API_BASE_URL = 'https://algo-backend.onrender.com'; // ← change to your Render URL
+const API_BASE_URL = 'https://algo-backend-lia7.onrender.com'; // ← change to your Render URL
 ```
 
 > Optional runtime override without re-deploying:
-> `localStorage.setItem('algo_api_url', 'https://algo-backend.onrender.com')` in the browser console on the Pages site.
+> `localStorage.setItem('algo_api_url', 'https://algo-backend-lia7.onrender.com')` in the browser console on the Pages site.
 
 Change that constant, commit, push — GitHub Pages rebuilds automatically.
 
