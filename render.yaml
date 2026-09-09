@@ -1,0 +1,19 @@
+# Render Blueprint — Algo backend
+# To deploy: Render dashboard → New → Blueprint → pick this repo.
+# Render will prompt for MONGODB_URI and JWT_SECRET before applying.
+services:
+  - type: web
+    name: algo-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    plan: free
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://azimpial.github.io
