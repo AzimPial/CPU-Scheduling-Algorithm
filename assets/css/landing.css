@@ -1,10 +1,57 @@
 /* ============================================================
-   SchedViz — Landing / Welcome specific styles
+   Algo — Landing / Welcome screen styles
+   "Calm AI Product" design language
    ============================================================ */
 
-/* Welcome screen is inside the chat thread, styles are in chat.css */
-/* This file adds any extra landing-page specific overrides */
+/* ---- Landing Hero ---- */
+.landing-hero {
+  text-align: center;
+  padding: 40px 20px 20px;
+  animation: panelSlideIn 300ms ease-out;
+}
 
+/* ---- Logo Mark ---- */
+.landing-hero .logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+/* ---- Heading ---- */
+.landing-hero h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+/* ---- Tagline ---- */
+.landing-hero .tagline {
+  font-size: 16px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-bottom: 8px;
+}
+
+/* ---- Description ---- */
+.landing-hero .description {
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* ---- Landing Quick Actions ---- */
 .landing-quick-actions {
   display: flex;
   gap: 8px;
@@ -12,6 +59,7 @@
   margin-top: 16px;
 }
 
+/* ---- Info Panel ---- */
 .info-panel {
   padding: 12px 14px;
   background: var(--bg-tertiary);
@@ -19,6 +67,7 @@
   border-radius: var(--radius-md);
   margin-top: 12px;
 }
+
 .info-panel h4 {
   font-size: 12px;
   color: var(--text-muted);
@@ -26,10 +75,12 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
 .info-panel ul {
   list-style: none;
   padding: 0;
 }
+
 .info-panel li {
   font-size: 12px;
   color: var(--text-secondary);
@@ -38,6 +89,7 @@
   align-items: center;
   gap: 6px;
 }
+
 .info-panel li::before {
   content: '';
   width: 4px;

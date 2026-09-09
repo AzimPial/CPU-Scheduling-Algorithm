@@ -82,6 +82,36 @@ export const ALGO_PALETTE = [
   '#4FC3F7', '#FF8A65', '#81C784', '#BA68C8', '#FFD54F', '#F06292'
 ];
 
+/** Colorblind-safe (CVD) palettes — Okabe-Ito inspired */
+export const PROC_PALETTE_CB = [
+  '#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00',
+  '#56B4E9', '#F0E442', '#000000', '#999999', '#882255'
+];
+
+export const ALGO_PALETTE_CB = [
+  '#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00', '#56B4E9'
+];
+
+let cvdActive = false;
+
+/**
+ * Enable/disable the colorblind-safe palette.
+ * @param {boolean} active
+ */
+export function setColorblindPalette(active) {
+  cvdActive = !!active;
+}
+
+/**
+ * Get the active process palette.
+ * @param {'proc'|'algo'} [kind]
+ * @returns {string[]}
+ */
+export function getActivePalette(kind = 'proc') {
+  if (cvdActive) return kind === 'algo' ? ALGO_PALETTE_CB : PROC_PALETTE_CB;
+  return kind === 'algo' ? ALGO_PALETTE : PROC_PALETTE;
+}
+
 /** Algorithm display names and metadata. */
 export const ALGORITHMS = {
   // ---------------------------------------------------------------- Classical

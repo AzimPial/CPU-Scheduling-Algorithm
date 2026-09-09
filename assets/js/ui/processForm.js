@@ -4,7 +4,7 @@
  * @module ui/processForm
  */
 
-import { PROC_PALETTE, ALGORITHMS, VALIDATION, FIELD_LABELS } from '../core/types.js';
+import { getActivePalette, ALGORITHMS, VALIDATION, FIELD_LABELS } from '../core/types.js';
 import { validateAllProcesses } from '../core/validators.js';
 
 /**
@@ -76,7 +76,8 @@ export function createProcessForm(container, options = {}) {
     for (let i = 0; i < processCount; i++) {
       const row = processRows[i] || defaultRow(i);
       if (!processRows[i]) processRows[i] = row;
-      const color = PROC_PALETTE[i % PROC_PALETTE.length];
+      const palette = getActivePalette();
+      const color = palette[i % palette.length];
       html += '<tr>';
       html += `<td><div class="proc-id"><span class="proc-dot" style="background:${color}"></span><span class="mono">${row.id}</span></div></td>`;
       for (const f of fields) {
@@ -114,8 +115,9 @@ export function createProcessForm(container, options = {}) {
 
   function getProcesses() {
     const fields = activeFields();
+    const palette = getActivePalette();
     return processRows.slice(0, processCount).map((row, i) => {
-      const proc = { id: row.id || `P${i + 1}`, color: PROC_PALETTE[i % PROC_PALETTE.length] };
+      const proc = { id: row.id || `P${i + 1}`, color: palette[i % palette.length] };
       for (const f of fields) {
         proc[f] = row[f];
       }

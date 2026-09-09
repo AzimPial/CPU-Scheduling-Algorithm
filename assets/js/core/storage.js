@@ -1,10 +1,10 @@
 /**
- * @fileoverview SchedViz — localStorage persistence and URL state encoding/decoding.
+ * @fileoverview Algo — localStorage persistence, URL state encoding/decoding, and cloud-save helpers.
  * @module core/storage
  */
 
-const STORAGE_KEY = 'schedviz_scenarios';
-const THEME_KEY = 'schedviz_theme';
+const STORAGE_KEY = 'algo_scenarios';
+const THEME_KEY = 'algo_theme';
 
 /**
  * Encode current state as a base64 URL parameter.
@@ -32,7 +32,11 @@ export function decodeState() {
     if (!s) return null;
     const decoded = decodeURIComponent(s);
     const json = decodeURIComponent(escape(atob(decoded)));
-    return JSON.parse(json);
+    const state = JSON.parse(json);
+    if (state.autoRun) {
+      state.autoRun = true;
+    }
+    return state;
   } catch {
     return null;
   }
@@ -96,7 +100,8 @@ export function saveScenario(name, state) {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name,
     timestamp: Date.now(),
-    state
+    state,
+    source: 'local'
   };
   scenarios.unshift(scenario);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
@@ -104,7 +109,7 @@ export function saveScenario(name, state) {
 }
 
 /**
- * Delete a saved scenario.
+ * Delete a saved scenario (localStorage only).
  * @param {string} id
  */
 export function deleteScenario(id) {
@@ -117,7 +122,7 @@ export function deleteScenario(id) {
  * @returns {'dark'|'light'}
  */
 export function getTheme() {
-  return localStorage.getItem(THEME_KEY) || 'dark';
+  return localStorage.getItem(THEME_KEY) || 'light';
 }
 
 /**

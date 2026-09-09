@@ -1,11 +1,13 @@
 /**
- * @fileoverview SchedViz — Main application controller.
- * Wires together all modules: algorithms, UI, storage, and event handling.
+ * @fileoverview Algo — Main application controller.
+ * Wires together algorithms, UI, backend sync, settings, and export.
  * @module app
  */
 
-import { ALGORITHMS, ALGO_PALETTE, PROC_PALETTE } from './core/types.js';
-import { saveScenario, copyShareableLink, encodeState, decodeState } from './core/storage.js';
+import { ALGORITHMS, getActivePalette, setColorblindPalette } from './core/types.js';
+import { saveScenario, copyShareableLink, decodeState } from './core/storage.js';
+import { getSettings, getSetting, getAnimationDuration, initSettings } from './core/settings.js';
+import { isLoggedIn, getUsername, clearAuth, apiFetch } from './core/api.js';
 import { run as runFCFS } from './algorithms/fcfs.js';
 import { run as runSJF } from './algorithms/sjf.js';
 import { run as runSRTF } from './algorithms/srtf.js';
@@ -37,12 +39,15 @@ import { run as runSchedDeadline } from './algorithms/schedDeadline.js';
 import { run as runOmniVR } from './algorithms/omniVR.js';
 import { run as runIdleBalancing } from './algorithms/schedIdleBalancing.js';
 import { renderGantt } from './ui/ganttRenderer.js';
-import { renderResultsTable, renderMetricCards, resultsToCSV, downloadCSV, downloadGanttPNG } from './ui/resultsTable.js';
+import { renderResultsTable, renderMetricCards, resultsToCSV, downloadCSV } from './ui/resultsTable.js';
 import { createChatThread } from './ui/chatThread.js';
 import { createSidebar } from './ui/sidebar.js';
 import { createInputBar } from './ui/inputBar.js';
-import { initTheme } from './ui/theme.js';
+import { initTheme, applyTheme, resolveTheme } from './ui/theme.js';
 import { showAlgorithmInfo, showShortcutsModal, close as closeModal } from './ui/modal.js';
+import { showSettingsModal } from './ui/settings.js';
+import { createShareExportPopover, showToast } from './ui/shareExport.js';
+import { createResultsEditor } from './ui/resultsEditor.js';
 
 const ALGO_RUNNERS = {
   fcfs: runFCFS,
@@ -80,6 +85,16 @@ const ALGO_RUNNERS = {
 let currentMode = 'visualize';
 let currentSessionId = null;
 let lastResult = null;
+let lastRunData = null;
+let activeCharts = [];
+
+function debounce(fn, ms) {
+  let t;
+  return function (...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -91,6 +106,9 @@ function init() {
   const themeBtn = document.getElementById('btn-theme');
   const hamburgerBtn = document.getElementById('btn-hamburger');
   const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+  applySettingsToPage();
+  updateColorblindClass();
 
   const theme = initTheme(themeBtn);
   const chat = createChatThread(threadEl, messagesEl);
@@ -115,6 +133,15 @@ function init() {
     if (urlState.processes) {
       inputBar.setProcesses(urlState.processes);
     }
+    if (urlState.algorithm && currentMode === 'visualize') {
+      inputBar.setAlgorithm(urlState.algorithm);
+    }
+    if (urlState.selectedAlgorithms) {
+      inputBar.setSelectedAlgorithms(urlState.selectedAlgorithms);
+    }
+    if (urlState.options?.quantum) {
+      inputBar.setQuantum(urlState.options.quantum);
+    }
   }
 
   const sidebar = createSidebar(sidebarEl, {
@@ -133,21 +160,28 @@ function init() {
       if (sidebarOverlay) sidebarOverlay.classList.remove('active');
     },
     onNew: () => {
-      currentSessionId = null;
-      chat.clear();
-      inputBar.resetToDefaults();
-      currentMode = 'visualize';
-      updateModeTabs('visualize');
-      sidebar.highlightActive(null);
-      chat.addWelcomeCard(
-        () => { setMode('visualize'); },
-        () => { setMode('compare'); }
-      );
+      resetToWelcome(chat, inputBar, sidebar);
     }
   });
 
   document.getElementById('btn-new-chat')?.addEventListener('click', () => {
+    resetToWelcome(chat, inputBar, sidebar);
+  });
+
+  document.getElementById('btn-settings')?.addEventListener('click', () => {
+    showSettingsModal();
+  });
+
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      setMode(tab.dataset.mode);
+    });
+  });
+
+  function resetToWelcome(chat, inputBar, sidebar) {
     currentSessionId = null;
+    lastRunData = null;
+    lastResult = null;
     chat.clear();
     inputBar.resetToDefaults();
     currentMode = 'visualize';
@@ -157,13 +191,7 @@ function init() {
       () => { setMode('visualize'); },
       () => { setMode('compare'); }
     );
-  });
-
-  document.querySelectorAll('.mode-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      setMode(tab.dataset.mode);
-    });
-  });
+  }
 
   function setMode(mode) {
     currentMode = mode;
@@ -215,14 +243,119 @@ function init() {
     showShortcutsModal();
   });
 
+  initAuthUI();
+
+  const landing = getSetting('defaultLanding');
+  if (!urlState && (landing === 'visualize' || landing === 'compare')) {
+    setMode(landing);
+  }
+
   chat.addWelcomeCard(
     () => { setMode('visualize'); },
     () => { setMode('compare'); }
   );
+
+  if (getSetting('autoRun')) {
+    const debounceRun = debounce(() => {
+      if (!lastRunData || !inputBar) return;
+      const processes = inputBar.getProcesses();
+      const algo = currentMode === 'compare' ? inputBar.getSelectedAlgorithms() : inputBar.getAlgorithm();
+      if (currentMode === 'compare' && (!Array.isArray(algo) || algo.length < 2)) return;
+      const opts = inputBar.getOptions();
+      executeAndRender({ algorithm: algo, options: opts, processes, mode: currentMode }, chat, inputBar);
+    }, 400);
+    inputBarEl.addEventListener('input', (e) => {
+      if (e.target.closest('.process-table')) debounceRun();
+    });
+  }
+
+  if (urlState?.autoRun) {
+    const autoRunData = {
+      algorithm: currentMode === 'compare' ? (urlState.selectedAlgorithms || ['fcfs', 'sjf']) : (urlState.algorithm || 'fcfs'),
+      options: urlState.options || {},
+      processes: urlState.processes || inputBar.getProcesses(),
+      mode: currentMode
+    };
+    setTimeout(() => executeAndRender(autoRunData, chat, inputBar), 400);
+  }
 }
 
+/* ---- Settings application ---- */
+function applySettingsToPage() {
+  initSettings();
+  const settings = getSettings();
+  const pref = settings.theme;
+  if (pref === 'system') {
+    applyTheme(resolveTheme('system'));
+  } else {
+    applyTheme(pref);
+  }
+  document.body.style.setProperty('--anim-duration', getAnimationDuration() + 'ms');
+}
+
+function updateColorblindClass() {
+  const active = !!getSetting('colorblindPalette');
+  setColorblindPalette(active);
+  document.body.classList.toggle('colorblind', active);
+}
+
+/* ---- Auth UI ---- */
+function initAuthUI() {
+  const chip = document.getElementById('profile-chip');
+  const navBtn = document.getElementById('btn-login-nav');
+  const nameEl = document.getElementById('profile-name');
+  const avatarEl = document.getElementById('profile-avatar');
+  const dropdown = document.getElementById('profile-dropdown');
+
+  const showChip = (username) => {
+    if (chip) chip.classList.remove('hidden');
+    if (navBtn) navBtn.classList.add('hidden');
+    if (nameEl) nameEl.textContent = username;
+    if (avatarEl) avatarEl.textContent = (username || 'U')[0].toUpperCase();
+  };
+  const showGuest = () => {
+    if (chip) chip.classList.add('hidden');
+    if (navBtn) navBtn.classList.remove('hidden');
+  };
+
+  if (isLoggedIn()) {
+    const username = getUsername();
+    showChip(username);
+    apiFetch('GET', '/api/auth/me').then(({ data }) => {
+      if (data?.username) {
+        showChip(data.username);
+        localStorage.setItem('algo_username', data.username);
+      } else {
+        clearAuth();
+        showGuest();
+      }
+    });
+  } else {
+    showGuest();
+  }
+
+  if (chip) {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (dropdown) dropdown.classList.toggle('hidden');
+    });
+    document.addEventListener('click', () => {
+      if (dropdown) dropdown.classList.add('hidden');
+    });
+  }
+
+  document.getElementById('btn-logout')?.addEventListener('click', () => {
+    clearAuth();
+    showGuest();
+    showToast('Logged out');
+    if (dropdown) dropdown.classList.add('hidden');
+  });
+}
+
+/* ---- Execution & Rendering ---- */
 function executeAndRender(runData, chat, inputBar) {
   const { algorithm, options, processes, mode } = runData;
+  lastRunData = runData;
 
   let summaryText = '';
   if (mode === 'compare') {
@@ -261,8 +394,26 @@ function executeAndRender(runData, chat, inputBar) {
       el.classList.toggle('active', el.dataset.id === scenario.id);
     });
   }
+
+  if (isLoggedIn()) syncScenarioToCloud(state);
 }
 
+async function syncScenarioToCloud(state) {
+  const name = state.mode === 'compare'
+    ? `Compare: ${state.algorithm.map(k => ALGORITHMS[k]?.name || k).join(', ')}`
+    : `Algorithm: ${ALGORITHMS[state.algorithm]?.fullName || state.algorithm}`;
+  const { error } = await apiFetch('POST', '/api/scenarios', {
+    name,
+    algorithm: JSON.stringify(state.algorithm),
+    options: state.options || {},
+    processes: state.processes
+  });
+  if (error) {
+    // Silent: app must remain fully usable when backend is unreachable.
+  }
+}
+
+/* ---- renderSingle (Module 1) ---- */
 function renderSingle(algorithmKey, options, processes, chat) {
   const runner = ALGO_RUNNERS[algorithmKey];
   if (!runner) return;
@@ -270,86 +421,34 @@ function renderSingle(algorithmKey, options, processes, chat) {
   const result = runner(processes, options);
   lastResult = result;
 
-  const { element: resultMsg, body } = chat.addAssistantMessage((body) => {
+  const algoInfo = ALGORITHMS[algorithmKey];
+  const activeFields = ['arrivalTime', 'burstTime', ...(algoInfo?.fields || []).filter(f => f !== 'arrivalTime' && f !== 'burstTime')];
+
+  let resultRegion = null;
+  let textEl = null;
+  let liveReRun = null;
+
+  chat.addAssistantMessage((body) => {
     const text = document.createElement('div');
     text.className = 'msg-text';
     text.innerHTML = `<strong>${result.algorithm}</strong> completed. Avg wait: <strong>${result.avgWaitingTime.toFixed(2)}</strong> | CPU utilization: <strong>${result.cpuUtilization.toFixed(1)}%</strong>`;
     body.appendChild(text);
+    textEl = text;
 
     const actionsBar = document.createElement('div');
     actionsBar.className = 'result-actions';
-    actionsBar.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
+    actionsBar.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;';
     actionsBar.innerHTML = `
-      <button class="btn btn-sm btn-ghost info-btn" data-algo="${algorithmKey}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> About</button>
-      <button class="btn btn-sm btn-ghost share-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share</button>
+      <button class="btn btn-sm btn-ghost info-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> About</button>
       <button class="btn btn-sm btn-ghost save-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save</button>
       <button class="btn btn-sm btn-ghost export-csv-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV</button>
-      <button class="btn btn-sm btn-ghost export-png-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> PNG</button>
     `;
     body.appendChild(actionsBar);
 
     actionsBar.querySelector('.info-btn')?.addEventListener('click', () => showAlgorithmInfo(algorithmKey));
-    actionsBar.querySelector('.share-btn')?.addEventListener('click', async () => {
-      const state = { algorithm: algorithmKey, options, processes, mode: 'visualize' };
-      const ok = await copyShareableLink(state);
-      const btn = actionsBar.querySelector('.share-btn');
-      if (btn) {
-        btn.innerHTML = ok ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!' : 'Failed';
-        setTimeout(() => { btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share'; }, 2000);
-      }
-    });
-
-    const resultCard = document.createElement('div');
-    resultCard.className = 'result-card';
-    const cardHeader = document.createElement('div');
-    resultCard.appendChild(cardHeader);
-
-    const ganttWrapper = document.createElement('div');
-    ganttWrapper.className = 'gantt-container';
-    resultCard.appendChild(ganttWrapper);
-
-    const ganttResult = renderGantt(ganttWrapper, result);
-
-    const traceWrapper = document.createElement('div');
-    resultCard.appendChild(traceWrapper);
-    createTraceControls(traceWrapper, result, ganttWrapper, processes);
-
-    body.appendChild(resultCard);
-
-    const tableCard = document.createElement('div');
-    tableCard.className = 'result-card';
-    tableCard.style.marginTop = '12px';
-    renderResultsTable(tableCard, result, { algorithmKey });
-    body.appendChild(tableCard);
-
-    if (result.realTime && result.allDeadlinesMet !== undefined) {
-      const rtVerdict = document.createElement('div');
-      rtVerdict.className = 'rt-verdict';
-      rtVerdict.style.marginTop = '12px';
-      rtVerdict.style.padding = '10px 12px';
-      rtVerdict.style.borderRadius = 'var(--radius, 8px)';
-      rtVerdict.style.fontSize = '13px';
-      const met = result.allDeadlinesMet;
-      rtVerdict.style.backgroundColor = met ? 'rgba(129,199,132,0.12)' : 'rgba(240,98,146,0.14)';
-      rtVerdict.style.border = '1px solid ' + (met ? '#81C784' : '#F06292');
-      const misses = (result.deadlineMissedAt || []).length;
-      rtVerdict.innerHTML = met
-        ? '<strong>All deadlines met</strong> — task set is schedulable under this policy.'
-        : `<strong>${misses} missed deadline${misses === 1 ? '' : 's'}</strong> — task set is <b>not</b> schedulable under this policy. (Simplified educational simulation.)`;
-      body.appendChild(rtVerdict);
-    }
-
-    const metricsCard = document.createElement('div');
-    metricsCard.style.marginTop = '12px';
-    renderMetricCards(metricsCard, result);
-    body.appendChild(metricsCard);
-
     actionsBar.querySelector('.export-csv-btn')?.addEventListener('click', () => {
       const csv = resultsToCSV(result, algorithmKey);
       downloadCSV(csv, `${result.algorithm.replace(/[^a-z0-9]/gi, '_')}_results.csv`);
-    });
-    actionsBar.querySelector('.export-png-btn')?.addEventListener('click', () => {
-      downloadGanttPNG(ganttResult.getSVGForExport(), `${result.algorithm.replace(/[^a-z0-9]/gi, '_')}_gantt.png`);
     });
     actionsBar.querySelector('.save-btn')?.addEventListener('click', () => {
       const name = prompt('Save as:', result.algorithm);
@@ -358,13 +457,144 @@ function renderSingle(algorithmKey, options, processes, chat) {
         document.dispatchEvent(new CustomEvent('schedviz:sidebar-refresh'));
       }
     });
+
+    createShareExportPopover(body, { result, algorithmKey, processes, options, mode: 'visualize' });
+
+    resultRegion = document.createElement('div');
+    resultRegion.className = 'result-region';
+    body.appendChild(resultRegion);
+
+    const editorSection = document.createElement('div');
+    editorSection.className = 'results-editor';
+    body.appendChild(editorSection);
+
+    createResultsEditor({
+      container: editorSection,
+      processes: processes.map(p => ({ ...p })),
+      algorithmKey,
+      activeFields,
+      onEdit: (procs) => { if (liveReRun) liveReRun(procs); },
+      onAddRow: () => {},
+      onRemoveRow: () => {},
+      onReset: null
+    });
+
+    renderResultContent(resultRegion, algorithmKey, options, processes, result);
+  });
+
+  liveReRun = function (procs) {
+    if (!Array.isArray(procs)) return;
+    const updatedOptions = { ...options };
+    const newResult = ALGO_RUNNERS[algorithmKey](procs, updatedOptions);
+    lastResult = newResult;
+    if (resultRegion) {
+      destroyCharts();
+      resultRegion.innerHTML = '';
+      renderResultContent(resultRegion, algorithmKey, updatedOptions, procs, newResult);
+    }
+    if (textEl) {
+      textEl.innerHTML = `<strong>${newResult.algorithm}</strong> completed. Avg wait: <strong>${newResult.avgWaitingTime.toFixed(2)}</strong> | CPU utilization: <strong>${newResult.cpuUtilization.toFixed(1)}%</strong>`;
+    }
+  };
+}
+
+function renderResultContent(region, algorithmKey, options, processes, result) {
+  const resultCard = document.createElement('div');
+  resultCard.className = 'result-card';
+
+  const ganttWrapper = document.createElement('div');
+  ganttWrapper.className = 'gantt-container';
+  resultCard.appendChild(ganttWrapper);
+
+  const ganttResult = renderGantt(ganttWrapper, result);
+  const traceWrapper = document.createElement('div');
+  resultCard.appendChild(traceWrapper);
+  createTraceControls(traceWrapper, result, ganttWrapper, processes);
+
+  region.appendChild(resultCard);
+
+  const tableCard = document.createElement('div');
+  tableCard.className = 'result-card';
+  tableCard.style.marginTop = '12px';
+  renderResultsTable(tableCard, result, { algorithmKey });
+  region.appendChild(tableCard);
+
+  if (result.realTime && result.allDeadlinesMet !== undefined) {
+    const rtVerdict = document.createElement('div');
+    rtVerdict.className = 'rt-verdict';
+    rtVerdict.style.marginTop = '12px';
+    rtVerdict.style.padding = '10px 12px';
+    rtVerdict.style.borderRadius = 'var(--radius-md)';
+    rtVerdict.style.fontSize = '13px';
+    const met = result.allDeadlinesMet;
+    rtVerdict.style.backgroundColor = met ? 'rgba(39,174,96,0.1)' : 'rgba(192,57,43,0.1)';
+    rtVerdict.style.border = '1px solid ' + (met ? 'var(--success)' : 'var(--danger)');
+    const misses = (result.deadlineMissedAt || []).length;
+    rtVerdict.innerHTML = met
+      ? '<strong>All deadlines met</strong> — task set is schedulable under this policy.'
+      : `<strong>${misses} missed deadline${misses === 1 ? '' : 's'}</strong> — task set is <b>not</b> schedulable under this policy. (Simplified educational simulation.)`;
+    region.appendChild(rtVerdict);
+  }
+
+  const metricsCard = document.createElement('div');
+  metricsCard.style.marginTop = '12px';
+  renderMetricCards(metricsCard, result);
+  region.appendChild(metricsCard);
+
+  if (options.quantum && ALGORITHMS[algorithmKey]?.needsQuantum) {
+    const qLive = document.createElement('div');
+    qLive.className = 'quantum-live';
+    qLive.style.marginTop = '12px';
+    qLive.style.padding = '8px 12px';
+    qLive.style.background = 'var(--bg-tertiary)';
+    qLive.style.borderRadius = 'var(--radius-md)';
+    qLive.innerHTML = `
+      <span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Quantum</span>
+      <input type="range" min="1" max="20" value="${options.quantum}" class="quantum-slider" aria-label="Time quantum">
+      <input type="number" min="1" max="20" value="${options.quantum}" class="quantum-num" style="width:56px;padding:3px 6px;font-size:12px;text-align:center">
+    `;
+    const applyQ = (q) => {
+      q = Math.max(1, Math.min(20, parseInt(q) || 2));
+      qLive.querySelector('.quantum-slider').value = q;
+      qLive.querySelector('.quantum-num').value = q;
+      liveReRunQuantum(processes, q);
+    };
+    qLive.querySelector('.quantum-slider').addEventListener('input', (e) => applyQ(e.target.value));
+    qLive.querySelector('.quantum-num').addEventListener('change', (e) => applyQ(e.target.value));
+    region.appendChild(qLive);
+
+    function liveReRunQuantum(procs, q) {
+      const newOptions = { ...options, quantum: q };
+      const newResult = ALGO_RUNNERS[algorithmKey](procs, newOptions);
+      lastResult = newResult;
+      destroyCharts();
+      region.innerHTML = '';
+      renderResultContent(region, algorithmKey, newOptions, procs, newResult);
+      const msgBody = region.closest('.msg-body');
+      const text = msgBody ? msgBody.querySelector('.msg-text') : null;
+      if (text) text.innerHTML = `<strong>${newResult.algorithm}</strong> completed. Avg wait: <strong>${newResult.avgWaitingTime.toFixed(2)}</strong> | CPU utilization: <strong>${newResult.cpuUtilization.toFixed(1)}%</strong>`;
+    }
+  }
+}
+
+function destroyCharts() {
+  while (activeCharts.length) {
+    const c = activeCharts.pop();
+    if (c && typeof c.destroy === 'function') c.destroy();
+  }
+  document.querySelectorAll('.chart-container canvas').forEach(cv => {
+    if (cv._chart) cv._chart.destroy();
   });
 }
 
+/* ---- renderComparison (Module 2) ---- */
 function renderComparison(algorithmKeys, options, processes, chat) {
   const results = algorithmKeys.map(key => {
     const runner = ALGO_RUNNERS[key];
-    return runner ? runner(processes, options) : null;
+    if (!runner) return null;
+    const r = runner(processes, options);
+    if (r) r.algorithmKey = key;
+    return r;
   }).filter(Boolean);
 
   chat.addAssistantMessage((body) => {
@@ -375,111 +605,11 @@ function renderComparison(algorithmKeys, options, processes, chat) {
 
     const actionsBar = document.createElement('div');
     actionsBar.className = 'result-actions';
-    actionsBar.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;';
+    actionsBar.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;';
     actionsBar.innerHTML = `
-      <button class="btn btn-sm btn-ghost share-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share</button>
       <button class="btn btn-sm btn-ghost export-csv-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV</button>
     `;
     body.appendChild(actionsBar);
-
-    actionsBar.querySelector('.share-btn')?.addEventListener('click', async () => {
-      const state = { algorithm: algorithmKeys, options, processes, mode: 'compare', selectedAlgorithms: algorithmKeys };
-      await copyShareableLink(state);
-      const btn = actionsBar.querySelector('.share-btn');
-      if (btn) { btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!'; setTimeout(() => { btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share'; }, 2000); }
-    });
-
-    const maxMakespan = Math.max(...results.map(r => r.totalTime));
-
-    const ganttGroup = document.createElement('div');
-    ganttGroup.className = 'comparison-gantt-group';
-    body.appendChild(ganttGroup);
-
-    results.forEach((result, idx) => {
-      const item = document.createElement('div');
-      item.className = 'comparison-gantt-item';
-      const label = document.createElement('div');
-      label.className = 'algo-label';
-      label.style.color = ALGO_PALETTE[idx % ALGO_PALETTE.length];
-      label.textContent = result.algorithm;
-      item.appendChild(label);
-
-      const ganttContainer = document.createElement('div');
-      ganttContainer.className = 'gantt-container';
-      item.appendChild(ganttContainer);
-      ganttGroup.appendChild(item);
-
-      renderGantt(ganttContainer, result, { maxWidth: 800 });
-    });
-
-    const chartsGrid = document.createElement('div');
-    chartsGrid.className = 'charts-grid';
-    chartsGrid.style.marginTop = '16px';
-    body.appendChild(chartsGrid);
-
-    const metricsToChart = [
-      { key: 'avgWaitingTime', label: 'Average Waiting Time' },
-      { key: 'avgTurnaroundTime', label: 'Average Turnaround Time' },
-      { key: 'totalIdleTime', label: 'CPU Idle Time' }
-    ];
-
-    for (const metric of metricsToChart) {
-      const chartCard = document.createElement('div');
-      chartCard.className = 'chart-card';
-      const title = document.createElement('h4');
-      title.textContent = metric.label;
-      chartCard.appendChild(title);
-      const canvas = document.createElement('canvas');
-      chartCard.appendChild(canvas);
-      chartsGrid.appendChild(chartCard);
-
-      if (typeof Chart !== 'undefined') {
-        new Chart(canvas.getContext('2d'), {
-          type: 'bar',
-          data: {
-            labels: results.map(r => r.algorithm),
-            datasets: [{
-              data: results.map(r => r[metric.key]),
-              backgroundColor: results.map((_, i) => ALGO_PALETTE[i % ALGO_PALETTE.length]),
-              borderRadius: 4,
-              borderWidth: 0
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: { legend: { display: false } },
-            scales: {
-              y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9AA5B4', font: { family: 'JetBrains Mono', size: 10 } } },
-              x: { grid: { display: false }, ticks: { color: '#9AA5B4', font: { family: 'JetBrains Mono', size: 10 } } }
-            }
-          }
-        });
-      }
-    }
-
-    const ranked = [...results].sort((a, b) => a.avgWaitingTime - b.avgWaitingTime);
-    const best = ranked[0];
-    const worst = ranked[ranked.length - 1];
-    const diff = worst.avgWaitingTime - best.avgWaitingTime;
-    const pct = worst.avgWaitingTime > 0 ? ((diff / worst.avgWaitingTime) * 100).toFixed(1) : '0';
-
-    const verdict = document.createElement('div');
-    verdict.className = 'verdict-box';
-    verdict.innerHTML = `For this input, <strong>${best.algorithm}</strong> achieved the lowest average waiting time (${best.avgWaitingTime.toFixed(2)}) and <strong>${worst.algorithm}</strong> the highest (${worst.avgWaitingTime.toFixed(2)}), a difference of ${diff.toFixed(2)} time units (${pct}%). <strong>${best.algorithm}</strong> also had the best CPU utilization at ${best.cpuUtilization.toFixed(1)}%.`;
-    body.appendChild(verdict);
-
-    const rankTable = document.createElement('div');
-    rankTable.className = 'result-card';
-    rankTable.style.marginTop = '12px';
-    let rankHtml = '<table class="data-table"><thead><tr><th>Rank</th><th>Algorithm</th><th>Avg Wait</th><th>Avg Turnaround</th><th>Idle Time</th><th>CPU Util</th></tr></thead><tbody>';
-    ranked.forEach((r, i) => {
-      const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-      rankHtml += `<tr><td><span class="rank-badge ${rankClass}">${i + 1}</span></td><td>${r.algorithm}</td><td>${r.avgWaitingTime.toFixed(2)}</td><td>${r.avgTurnaroundTime.toFixed(2)}</td><td>${r.totalIdleTime}</td><td>${r.cpuUtilization.toFixed(1)}%</td></tr>`;
-    });
-    rankHtml += '</tbody></table>';
-    rankTable.innerHTML = rankHtml;
-    body.appendChild(rankTable);
 
     actionsBar.querySelector('.export-csv-btn')?.addEventListener('click', () => {
       let csv = 'Algorithm,Avg Waiting Time,Avg Turnaround Time,Idle Time,CPU Utilization,Context Switches\n';
@@ -488,9 +618,260 @@ function renderComparison(algorithmKeys, options, processes, chat) {
       }
       downloadCSV(csv, 'comparison_results.csv');
     });
+
+    createShareExportPopover(body, { result: results[0], algorithmKey: 'compare', processes, selectedAlgorithms: algorithmKeys, options, mode: 'compare' });
+
+    const resultRegion = document.createElement('div');
+    resultRegion.className = 'result-region';
+    body.appendChild(resultRegion);
+
+    renderComparisonContent(resultRegion, algorithmKeys, options, processes, results);
+
+    const editorSection = document.createElement('div');
+    editorSection.className = 'results-editor';
+    body.appendChild(editorSection);
+
+    createResultsEditor({
+      container: editorSection,
+      processes: processes.map(p => ({ ...p })),
+      algorithmKey: 'compare',
+      activeFields: ['arrivalTime', 'burstTime'],
+      onEdit: (procs) => liveReRunCompare(procs),
+      onAddRow: () => {},
+      onRemoveRow: () => {}
+    });
+
+    function liveReRunCompare(procs) {
+      if (!Array.isArray(procs)) return;
+      const newResults = algorithmKeys.map(key => {
+        const runner = ALGO_RUNNERS[key];
+        if (!runner) return null;
+        const r = runner(procs, options);
+        if (r) r.algorithmKey = key;
+        return r;
+      }).filter(Boolean);
+      destroyCharts();
+      resultRegion.innerHTML = '';
+      renderComparisonContent(resultRegion, algorithmKeys, options, procs, newResults);
+    }
   });
 }
 
+function renderComparisonContent(region, algorithmKeys, options, processes, results) {
+  const ganttGroup = document.createElement('div');
+  ganttGroup.className = 'comparison-gantt-group';
+  region.appendChild(ganttGroup);
+
+  const algoPalette = getActivePalette('algo');
+  results.forEach((result, idx) => {
+    const item = document.createElement('div');
+    item.className = 'comparison-gantt-item';
+    const label = document.createElement('div');
+    label.className = 'algo-label';
+    label.style.color = algoPalette[idx % algoPalette.length];
+    label.textContent = result.algorithm;
+    item.appendChild(label);
+
+    const ganttContainer = document.createElement('div');
+    ganttContainer.className = 'gantt-container';
+    item.appendChild(ganttContainer);
+    ganttGroup.appendChild(item);
+
+    renderGantt(ganttContainer, result, { maxWidth: 800 });
+  });
+
+  renderComparisonCharts(region, results);
+
+  renderVerdictCard(region, results, processes);
+
+  renderPerAlgorithmTables(region, results);
+
+  const rankTable = document.createElement('div');
+  rankTable.className = 'result-card';
+  rankTable.style.marginTop = '12px';
+  const ranked = [...results].sort((a, b) => a.avgWaitingTime - b.avgWaitingTime);
+  let rankHtml = '<table class="data-table"><thead><tr><th>Rank</th><th>Algorithm</th><th>Avg Wait</th><th>Avg Turnaround</th><th>Idle Time</th><th>CPU Util</th></tr></thead><tbody>';
+  ranked.forEach((r, i) => {
+    const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    rankHtml += `<tr><td><span class="rank-badge ${rankClass}">${i + 1}</span></td><td>${r.algorithm}</td><td>${r.avgWaitingTime.toFixed(2)}</td><td>${r.avgTurnaroundTime.toFixed(2)}</td><td>${r.totalIdleTime}</td><td>${r.cpuUtilization.toFixed(1)}%</td></tr>`;
+  });
+  rankHtml += '</tbody></table>';
+  rankTable.innerHTML = rankHtml;
+  region.appendChild(rankTable);
+}
+
+function renderComparisonCharts(region, results) {
+  const chartsGrid = document.createElement('div');
+  chartsGrid.className = 'charts-grid';
+  chartsGrid.style.marginTop = '16px';
+  region.appendChild(chartsGrid);
+
+  const metricsToChart = [
+    { key: 'avgWaitingTime', label: 'Average Waiting Time' },
+    { key: 'avgTurnaroundTime', label: 'Average Turnaround Time' },
+    { key: 'totalIdleTime', label: 'CPU Idle Time' }
+  ];
+
+  for (const metric of metricsToChart) {
+    const chartCard = document.createElement('div');
+    chartCard.className = 'chart-card';
+    const title = document.createElement('h4');
+    title.textContent = metric.label;
+    chartCard.appendChild(title);
+    const canvas = document.createElement('canvas');
+    chartCard.appendChild(canvas);
+    chartsGrid.appendChild(chartCard);
+
+    const algoPalette = getActivePalette('algo');
+    if (typeof Chart !== 'undefined') {
+      const chart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: results.map(r => r.algorithm),
+          datasets: [{
+            data: results.map(r => r[metric.key]),
+            backgroundColor: results.map((_, i) => algoPalette[i % algoPalette.length]),
+            borderRadius: 4,
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: 'rgba(128,128,128,0.12)' }, ticks: { color: 'var(--text-muted)', font: { family: 'JetBrains Mono', size: 10 } } },
+            x: { grid: { display: false }, ticks: { color: 'var(--text-muted)', font: { family: 'JetBrains Mono', size: 10 } } }
+          }
+        }
+      });
+      activeCharts.push(chart);
+      canvas._chart = chart;
+    }
+  }
+
+  const perProcCard = document.createElement('div');
+  perProcCard.className = 'chart-card';
+  const perProcTitle = document.createElement('h4');
+  perProcTitle.textContent = 'Turnaround Time per Process';
+  perProcCard.appendChild(perProcTitle);
+  const perProcCanvas = document.createElement('canvas');
+  perProcCard.appendChild(perProcCanvas);
+  perProcCard.style.gridColumn = '1 / -1';
+  chartsGrid.appendChild(perProcCard);
+
+  if (typeof Chart !== 'undefined' && results.length) {
+    const procLabels = results[0].processResults.map(pr => pr.id);
+    const algoPalette = getActivePalette('algo');
+    const chart = new Chart(perProcCanvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: procLabels,
+        datasets: results.map((r, i) => ({
+          label: r.algorithm,
+          data: r.processResults.map(pr => pr.turnaroundTime),
+          backgroundColor: algoPalette[i % algoPalette.length],
+          borderRadius: 3,
+          borderWidth: 0
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'top', labels: { font: { family: 'Inter', size: 10 }, color: 'var(--text-muted)' } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: 'var(--text-muted)', font: { family: 'JetBrains Mono', size: 10 } } },
+          y: { beginAtZero: true, grid: { color: 'rgba(128,128,128,0.12)' }, ticks: { color: 'var(--text-muted)', font: { family: 'JetBrains Mono', size: 10 } } }
+        }
+      }
+    });
+    activeCharts.push(chart);
+    perProcCanvas._chart = chart;
+  }
+}
+
+function renderVerdictCard(region, results, processes) {
+  const ranked = [...results].sort((a, b) => a.avgWaitingTime - b.avgWaitingTime);
+  const best = ranked[0];
+  const runnerUp = ranked[1];
+  const gap = runnerUp ? runnerUp.avgWaitingTime - best.avgWaitingTime : 0;
+
+  let outlierText = '';
+  const waitByProcess = {};
+  for (const r of results) {
+    for (const pr of r.processResults) {
+      if (!waitByProcess[pr.id]) waitByProcess[pr.id] = [];
+      waitByProcess[pr.id].push({ algo: r.algorithm, wait: pr.waitingTime });
+    }
+  }
+  let worstRange = -1;
+  let worstProc = null;
+  let worstAlgo = null;
+  let worstWait = 0;
+  for (const [id, arr] of Object.entries(waitByProcess)) {
+    const waits = arr.map(x => x.wait);
+    const range = Math.max(...waits) - Math.min(...waits);
+    if (range > worstRange) {
+      worstRange = range;
+      worstProc = id;
+      const maxWait = Math.max(...waits);
+      const entry = arr.find(x => x.wait === maxWait);
+      worstAlgo = entry.algo;
+      worstWait = maxWait;
+    }
+  }
+  const benchmark = best.avgWaitingTime.toFixed(2);
+  const gapStr = gap.toFixed(2);
+
+  const verdict = document.createElement('div');
+  verdict.className = 'verdict-card';
+  verdict.innerHTML = `
+    <h4>Scheduling verdict</h4>
+    <p><span class="verdict-best">${best.algorithm}</span> achieved the lowest average waiting time for this input (${benchmark} time units).${runnerUp ? ` <strong>${runnerUp.algorithm}</strong> came second, ${gapStr} time units slower on average.` : ''}</p>
+    ${worstProc && worstRange > 0 ? `<p class="verdict-note">Note: ${worstProc}, with the longest burst time, waited significantly longer under ${worstAlgo} (${worstWait.toFixed(2)} time units) than under other policies — a classic starvation risk with shortest-job-first scheduling.</p>` : ''}
+  `;
+  region.appendChild(verdict);
+}
+
+function renderPerAlgorithmTables(region, results) {
+  const expandRow = document.createElement('div');
+  expandRow.className = 'expand-toggle';
+  expandRow.innerHTML = '<button class="btn btn-sm btn-ghost expand-all-btn">Compare all expanded</button>';
+  region.appendChild(expandRow);
+  const expandBtn = expandRow.querySelector('.expand-all-btn');
+
+  results.forEach((result) => {
+    const acc = document.createElement('div');
+    acc.className = 'accordion';
+    const header = document.createElement('div');
+    header.className = 'accordion-header';
+    header.innerHTML = `<span class="accordion-chevron">▶</span><span>${result.algorithm}</span>`;
+    header.addEventListener('click', () => {
+      header.classList.toggle('open');
+      body.classList.toggle('open');
+    });
+    const body = document.createElement('div');
+    body.className = 'accordion-body';
+    renderResultsTable(body, result, { algorithmKey: result.algorithmKey });
+    acc.appendChild(header);
+    acc.appendChild(body);
+    region.appendChild(acc);
+  });
+
+  expandBtn?.addEventListener('click', () => {
+    const all = expandBtn.textContent.includes('expanded');
+    region.querySelectorAll('.accordion-header').forEach(h => {
+      h.classList.toggle('open', all);
+      const b = h.nextElementSibling;
+      if (b) b.classList.toggle('open', all);
+    });
+    expandBtn.textContent = all ? 'Collapse all' : 'Compare all expanded';
+  });
+}
+
+/* ---- Trace Controls ---- */
 function createTraceControls(container, result, ganttContainer, processes) {
   const gantt = result.gantt;
   if (!gantt || gantt.length === 0) return;
@@ -502,10 +883,10 @@ function createTraceControls(container, result, ganttContainer, processes) {
 
   container.innerHTML = `
     <div class="trace-controls">
-      <button class="btn-icon trace-reset" aria-label="Reset"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
-      <button class="btn-icon trace-prev" aria-label="Step back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
-      <button class="btn-icon trace-play" aria-label="Play"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
-      <button class="btn-icon trace-next" aria-label="Step forward"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
+      <button class="btn-icon trace-btn trace-reset" aria-label="Reset"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      <button class="btn-icon trace-btn trace-prev" aria-label="Step back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
+      <button class="btn-icon trace-btn trace-play" aria-label="Play"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+      <button class="btn-icon trace-btn trace-next" aria-label="Step forward"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
       <input type="range" class="trace-slider" min="0" max="${totalTime}" value="0" step="1">
       <span class="trace-time mono">t=0</span>
     </div>
@@ -547,11 +928,12 @@ function createTraceControls(container, result, ganttContainer, processes) {
     }
 
     const rqHtmlArr = [];
+    const procPalette = getActivePalette();
     for (const p of processes) {
       if (p.arrivalTime > currentTime) continue;
       if (isFinished(p.id, currentTime)) continue;
       const isRunning = p.id === runningId;
-      const color = PROC_PALETTE[procIndex.get(p.id) % PROC_PALETTE.length];
+      const color = procPalette[procIndex.get(p.id) % procPalette.length];
       rqHtmlArr.push(`<span class="rq-chip${isRunning ? ' rq-running' : ''}" style="background:${color}">${p.id}${isRunning ? ' (running)' : ''}</span>`);
     }
     let rqHtml = rqHtmlArr.join('');

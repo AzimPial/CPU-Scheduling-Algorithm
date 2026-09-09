@@ -3,7 +3,7 @@
  * @module ui/resultsTable
  */
 
-import { PROC_PALETTE, ALGORITHMS, FIELD_LABELS } from '../core/types.js';
+import { getActivePalette, ALGORITHMS, FIELD_LABELS } from '../core/types.js';
 
 const RESULT_ONLY_FIELDS = {
   priority: '#',
@@ -51,7 +51,8 @@ export function renderResultsTable(container, result, options = {}) {
   html += '</tr></thead><tbody>';
 
   pr.forEach((p, i) => {
-    const color = PROC_PALETTE[i % PROC_PALETTE.length];
+    const palette = getActivePalette();
+    const color = palette[i % palette.length];
     html += '<tr>';
     html += `<td><span class="proc-color" style="background:${color}"></span><span class="mono">${p.id}</span></td>`;
     html += `<td>${p.arrivalTime ?? '—'}</td>`;

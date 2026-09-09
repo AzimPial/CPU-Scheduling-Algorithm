@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Algo — Log In</title>
+  <script>
+    (function(){try{var t=localStorage.getItem('algo_theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;600;650;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/components.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23C9603D'/><text x='50' y='62' text-anchor='middle' font-family='monospace' font-size='42' font-weight='bold' fill='white'>_&gt;</text></svg>">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: auto; }
+    .login-page { width: 100%; max-width: 400px; padding: 20px; }
+    .login-page .logo { text-align: center; margin-bottom: 24px; }
+    .login-page .logo-mark { display: inline-flex; width: 48px; height: 48px; border-radius: 16px; background: var(--accent); color: var(--text-inverse); align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 20px; font-weight: 700; margin-bottom: 12px; }
+    .login-page .logo h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 2px; }
+    .login-page .logo p { font-size: 14px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="login-page">
+    <div class="logo">
+      <div class="logo-mark">&gt;_</div>
+      <h1>Algo</h1>
+      <p>Watch your algorithms think.</p>
+    </div>
+    <div class="login-card" id="login-card">
+      <h2 id="login-title">Log in</h2>
+      <p class="login-subtitle" id="login-subtitle">Welcome back. Enter your credentials to continue.</p>
+
+      <form id="login-form" autocomplete="off">
+        <div class="form-group">
+          <label for="username-input">Username</label>
+          <input type="text" id="username-input" class="input" placeholder="3–20 characters, letters and numbers" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password-input">Password</label>
+          <input type="password" id="password-input" class="input" placeholder="Minimum 6 characters" autocomplete="current-password" required>
+        </div>
+        <div id="new-password-group" class="form-group" style="display:none">
+          <label for="new-password-input">Confirm Password</label>
+          <input type="password" id="new-password-input" class="input" placeholder="Re-enter password" autocomplete="new-password">
+        </div>
+        <div class="login-error" id="login-error"></div>
+        <button type="submit" class="btn btn-primary login-btn" id="login-submit-btn">Log in</button>
+      </form>
+
+      <div class="login-toggle">
+        <span id="login-toggle-text">Don't have an account?</span>
+        <a id="login-toggle-link">Create account</a>
+      </div>
+
+      <div style="margin-top:16px">
+        <a href="index.html" style="font-size:13px;color:var(--text-muted)">← Back to Algo</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="assets/js/ui/login.js"></script>
+</body>
+</html>

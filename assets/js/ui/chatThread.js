@@ -1,5 +1,5 @@
 /**
- * @fileoverview SchedViz — Chat thread message manager.
+ * @fileoverview Algo — Chat thread message manager.
  * @module ui/chatThread
  */
 
@@ -74,8 +74,8 @@ export function createChatThread(threadEl, messagesEl) {
       <div class="msg-content">
         <div class="welcome-card">
           <div class="welcome-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
-          <h2>SchedViz</h2>
-          <p>Interactive CPU Scheduling Algorithm Visualizer. Choose an algorithm, input your processes, and watch the scheduling happen in real-time with animated Gantt charts and detailed metrics.</p>
+          <h2>Algo</h2>
+          <p>Watch your algorithms think. Choose an algorithm, input your processes, and see the scheduling happen in real-time with animated Gantt charts, step-by-step traces, and detailed metrics.</p>
           <div class="welcome-features">
             <div class="welcome-feature" data-action="visualize">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>

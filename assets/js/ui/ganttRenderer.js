@@ -3,7 +3,7 @@
  * @module ui/ganttRenderer
  */
 
-import { PROC_PALETTE } from '../core/types.js';
+import { getActivePalette } from '../core/types.js';
 
 const BLOCK_MIN_PX = 28;
 const TICK_HEIGHT = 6;
@@ -31,10 +31,11 @@ export function renderGantt(container, result, options = {}) {
   const chartWidth = Math.max(400, Math.min(totalTime * 50, options.maxWidth || 800));
   const pxPerUnit = chartWidth / totalTime;
 
+  const procPalette = getActivePalette();
   const procColorMap = new Map();
   for (let i = 0; i < (result.processResults || []).length; i++) {
     const pr = result.processResults[i];
-    procColorMap.set(pr.id, PROC_PALETTE[i % PROC_PALETTE.length]);
+    procColorMap.set(pr.id, procPalette[i % procPalette.length]);
   }
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
