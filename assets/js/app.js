@@ -5,7 +5,7 @@
  */
 
 import { ALGORITHMS, getActivePalette, setColorblindPalette } from './core/types.js';
-import { saveScenario, copyShareableLink, decodeState } from './core/storage.js';
+import { saveScenario, setScenarioCloudId, importScenarios, copyShareableLink, decodeState } from './core/storage.js';
 import { getSettings, getSetting, getAnimationDuration, initSettings } from './core/settings.js';
 import { isLoggedIn, getUsername, clearAuth, apiFetch } from './core/api.js';
 import { run as runFCFS } from './algorithms/fcfs.js';
@@ -159,6 +159,9 @@ function init() {
       closeModal();
       if (sidebarOverlay) sidebarOverlay.classList.remove('active');
     },
+    onDelete: (cloudId) => {
+      apiFetch('DELETE', `/api/scenarios/${encodeURIComponent(cloudId)}`);
+    },
     onNew: () => {
       resetToWelcome(chat, inputBar, sidebar);
     }
@@ -246,6 +249,8 @@ function init() {
   });
 
   initAuthUI();
+
+  if (isLoggedIn()) loadCloudScenarios(sidebar);
 
   const landing = getSetting('defaultLanding');
   if (!urlState && (landing === 'visualize' || landing === 'compare')) {
@@ -397,14 +402,14 @@ function executeAndRender(runData, chat, inputBar) {
     });
   }
 
-  if (isLoggedIn()) syncScenarioToCloud(state);
+  if (isLoggedIn()) syncScenarioToCloud(state, scenario.id);
 }
 
-async function syncScenarioToCloud(state) {
+async function syncScenarioToCloud(state, localId) {
   const name = state.mode === 'compare'
     ? `Compare: ${state.algorithm.map(k => ALGORITHMS[k]?.name || k).join(', ')}`
     : `Algorithm: ${ALGORITHMS[state.algorithm]?.fullName || state.algorithm}`;
-  const { error } = await apiFetch('POST', '/api/scenarios', {
+  const { data, error } = await apiFetch('POST', '/api/scenarios', {
     name,
     algorithm: JSON.stringify(state.algorithm),
     options: state.options || {},
@@ -412,7 +417,39 @@ async function syncScenarioToCloud(state) {
   });
   if (error) {
     // Silent: app must remain fully usable when backend is unreachable.
+    return;
   }
+  if (data?._id && localId) setScenarioCloudId(localId, data._id);
+}
+
+/* ---- Cloud scenario loading ---- */
+async function loadCloudScenarios(sidebar) {
+  if (!isLoggedIn()) return;
+  const { data, error } = await apiFetch('GET', '/api/scenarios');
+  if (error || !Array.isArray(data)) return;
+
+  const cloudScenarios = data.map((s) => {
+    let algorithm = s.algorithm;
+    try { algorithm = JSON.parse(s.algorithm); } catch { /* keep raw */ }
+    const isCompare = Array.isArray(algorithm);
+    return {
+      id: s._id,
+      cloudId: s._id,
+      name: s.name,
+      timestamp: s.createdAt ? new Date(s.createdAt).getTime() : Date.now(),
+      state: {
+        algorithm,
+        options: s.options || {},
+        processes: Array.isArray(s.processes) ? s.processes : [],
+        mode: isCompare ? 'compare' : 'visualize',
+        selectedAlgorithms: isCompare ? algorithm : undefined,
+      },
+      source: 'cloud'
+    };
+  });
+
+  importScenarios(cloudScenarios);
+  sidebar.refresh();
 }
 
 /* ---- renderSingle (Module 1) ---- */

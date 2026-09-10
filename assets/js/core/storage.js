@@ -118,6 +118,32 @@ export function deleteScenario(id) {
 }
 
 /**
+ * Import cloud scenarios into localStorage, deduping by cloudId.
+ * Cloud copies win over local ones with the same cloudId; local-only
+ * scenarios are preserved. Newest first.
+ * @param {Array<Object>} cloudList - Scenarios in local shape (id, cloudId, name, timestamp, state)
+ * @returns {Array<Object>}
+ */
+export function importScenarios(cloudList) {
+  const local = loadScenarios();
+  const cloudIds = new Set(cloudList.filter(s => s.cloudId).map(s => s.cloudId));
+  const kept = local.filter(s => !cloudIds.has(s.cloudId));
+  const merged = [...kept, ...cloudList].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  return merged;
+}
+
+/**
+ * Attach the backend id to a locally saved scenario once it is synced to cloud.
+ * @param {string} id - Local scenario id
+ * @param {string} cloudId - Backend _id
+ */
+export function setScenarioCloudId(id, cloudId) {
+  const scenarios = loadScenarios().map(s => (s.id === id ? { ...s, cloudId, source: 'cloud' } : s));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
+}
+
+/**
  * Get theme preference.
  * @returns {'dark'|'light'}
  */

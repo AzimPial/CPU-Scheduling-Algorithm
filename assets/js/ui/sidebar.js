@@ -56,8 +56,12 @@ export function createSidebar(sidebarEl, callbacks) {
         if (e.target.closest('.si-delete')) {
           e.stopPropagation();
           const id = e.target.closest('.si-delete').dataset.deleteId;
+          const scenario = scenarios.find(s => s.id === id);
           deleteScenario(id);
           refresh();
+          if (scenario?.cloudId && callbacks.onDelete) {
+            callbacks.onDelete(scenario.cloudId);
+          }
           return;
         }
         const id = item.dataset.id;
