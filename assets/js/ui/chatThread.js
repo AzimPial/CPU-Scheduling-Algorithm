@@ -97,23 +97,22 @@ export function createChatThread(threadEl, messagesEl) {
         <div class="welcome-card">
           <div class="welcome-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
           <h2>Algo</h2>
-          <p>Watch your algorithms think. Choose an algorithm, input your processes, and see the scheduling happen in real-time with animated Gantt charts, step-by-step traces, and detailed metrics.</p>
           <div class="welcome-features">
             <div class="welcome-feature" data-action="visualize">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              <div class="wf-text"><h4>Visualize</h4><p>Run one algorithm and explore its behavior</p></div>
+              <div class="wf-text"><h4>Visualize</h4></div>
             </div>
             <div class="welcome-feature" data-action="compare">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-              <div class="wf-text"><h4>Compare</h4><p>Run multiple algorithms side-by-side</p></div>
+              <div class="wf-text"><h4>Compare</h4></div>
             </div>
             <div class="welcome-feature" data-action="randomize">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-              <div class="wf-text"><h4>Quick Start</h4><p>Randomize and run with one click</p></div>
+              <div class="wf-text"><h4>Quick Start</h4></div>
             </div>
             <div class="welcome-feature" data-action="shortcuts">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>
-              <div class="wf-text"><h4>Shortcuts</h4><p><kbd>Enter</kbd> run &middot; <kbd>R</kbd> randomize</p></div>
+              <div class="wf-text"><h4>Shortcuts</h4></div>
             </div>
           </div>
         </div>
