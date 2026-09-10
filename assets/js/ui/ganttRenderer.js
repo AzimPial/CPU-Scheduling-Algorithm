@@ -28,8 +28,10 @@ export function renderGantt(container, result, options = {}) {
   }
 
   const totalTime = result.totalTime || gantt[gantt.length - 1].end;
-  const chartWidth = Math.max(400, Math.min(totalTime * 50, options.maxWidth || 800));
-  const pxPerUnit = chartWidth / totalTime;
+  const GUTTER = 10;
+  const contentWidth = Math.max(400, Math.min(totalTime * 50, options.maxWidth || 800));
+  const chartWidth = contentWidth + GUTTER * 2;
+  const pxPerUnit = contentWidth / totalTime;
 
   const procPalette = getActivePalette();
   const procColorMap = new Map();
@@ -44,7 +46,7 @@ export function renderGantt(container, result, options = {}) {
 
   html += '<div class="gantt-bars">';
   gantt.forEach((block, idx) => {
-    const left = block.start * pxPerUnit;
+    const left = GUTTER + block.start * pxPerUnit;
     const width = (block.end - block.start) * pxPerUnit;
     const isIdle = block.processId === 'IDLE';
     const color = isIdle ? 'var(--idle-color)' : (procColorMap.get(block.processId) || '#888');
@@ -72,8 +74,9 @@ export function renderGantt(container, result, options = {}) {
   html += '<div class="gantt-axis">';
   const tickStep = totalTime <= 20 ? 1 : totalTime <= 40 ? 2 : totalTime <= 80 ? 5 : 10;
   for (let t = 0; t <= totalTime; t += tickStep) {
-    const left = t * pxPerUnit;
-    html += `<div class="gantt-tick" style="left:${left}px"><span>${t}</span></div>`;
+    const left = GUTTER + t * pxPerUnit;
+    const align = t === 0 ? 'edge-left' : (t === totalTime ? 'edge-right' : 'edge-center');
+    html += `<div class="gantt-tick ${align}" style="left:${left}px"><span>${t}</span></div>`;
   }
   html += '</div>';
 

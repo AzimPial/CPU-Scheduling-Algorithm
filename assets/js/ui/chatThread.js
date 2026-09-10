@@ -23,10 +23,17 @@ export function createChatThread(threadEl, messagesEl) {
     });
   }
 
+  function forceScrollToBottom() {
+    if (_scrollSuppressed) return;
+    threadEl.style.scrollBehavior = 'auto';
+    threadEl.scrollTop = threadEl.scrollHeight;
+    threadEl.style.scrollBehavior = '';
+  }
+
   function suppressScroll(on) {
     _scrollSuppressed = on;
     if (!on) {
-      requestAnimationFrame(() => scrollToBottom());
+      requestAnimationFrame(() => forceScrollToBottom());
     }
   }
 

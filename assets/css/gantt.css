@@ -144,8 +144,16 @@
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--text-muted);
-  transform: translateX(-50%);
   white-space: nowrap;
+}
+.gantt-axis .gantt-tick.edge-center span {
+  transform: translateX(-50%);
+}
+.gantt-axis .gantt-tick.edge-left span {
+  transform: translateX(0);
+}
+.gantt-axis .gantt-tick.edge-right span {
+  transform: translateX(-100%);
 }
 
 /* ---- Idle legend ---- */
