@@ -1,16 +1,11 @@
 /**
  * @fileoverview Algo — Chat thread message manager.
+ * Tracks serialized message data alongside DOM for persistence/restoration.
  * @module ui/chatThread
  */
 
-/**
- * Create a chat thread manager.
- * @param {HTMLElement} threadEl - The scrollable chat thread element
- * @param {HTMLElement} messagesEl - The container for messages
- * @returns {{addUserMessage, addAssistantMessage, clear, scrollToBottom, getMessages}}
- */
 export function createChatThread(threadEl, messagesEl) {
-  let messageCount = 0;
+  let messagesData = [];
 
   function scrollToBottom() {
     requestAnimationFrame(() => {
@@ -19,7 +14,8 @@ export function createChatThread(threadEl, messagesEl) {
   }
 
   function addUserMessage(text, summary) {
-    messageCount++;
+    messagesData.push({ role: 'user', content: text, summary: summary || '' });
+
     const msg = document.createElement('div');
     msg.className = 'msg msg-user';
     msg.innerHTML = `
@@ -36,8 +32,9 @@ export function createChatThread(threadEl, messagesEl) {
     return msg;
   }
 
-  function addAssistantMessage(contentFn) {
-    messageCount++;
+  function addAssistantMessage(contentFn, data) {
+    if (data) messagesData.push(data);
+
     const msg = document.createElement('div');
     msg.className = 'msg msg-assistant';
 
@@ -114,14 +111,31 @@ export function createChatThread(threadEl, messagesEl) {
 
   function clear() {
     messagesEl.innerHTML = '';
-    messageCount = 0;
+    messagesData = [];
   }
 
   function getMessages() {
     return messagesEl.querySelectorAll('.msg');
   }
 
-  return { addUserMessage, addAssistantMessage, addWelcomeCard, clear, scrollToBottom, getMessages };
+  function getMessagesData() {
+    return messagesData;
+  }
+
+  function setMessagesData(messages) {
+    messagesData = messages || [];
+  }
+
+  return {
+    addUserMessage,
+    addAssistantMessage,
+    addWelcomeCard,
+    clear,
+    scrollToBottom,
+    getMessages,
+    getMessagesData,
+    setMessagesData,
+  };
 }
 
 function escapeHtml(str) {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import Scenario from "../models/Scenario.js";
+import Chat from "../models/Chat.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = Router();
@@ -8,54 +8,51 @@ router.use(authMiddleware);
 
 router.get("/", async (req, res) => {
   try {
-    const scenarios = await Scenario.find({ owner: req.user.username }).sort({
-      createdAt: -1,
-    });
-    return res.status(200).json(scenarios);
+    const chats = await Chat.find({ owner: req.user.username })
+      .sort({ updatedAt: -1 })
+      .lean();
+    return res.status(200).json(chats);
   } catch (err) {
-    console.error("Get scenarios error:", err.message);
+    console.error("Get chats error:", err.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const { name, algorithm, options, processes } = req.body;
+    const { clientChatId, title, messages } = req.body;
 
-    if (!name || !algorithm) {
-      return res.status(400).json({ error: "Name and algorithm are required" });
+    if (!clientChatId) {
+      return res.status(400).json({ error: "clientChatId is required" });
     }
 
-    const scenario = new Scenario({
-      owner: req.user.username,
-      name,
-      algorithm,
-      options: options || {},
-      processes: processes || [],
-    });
+    const chat = await Chat.findOneAndUpdate(
+      { owner: req.user.username, clientChatId },
+      { title: title || "New chat", messages: messages || [], updatedAt: new Date() },
+      { new: true, upsert: true }
+    );
 
-    await scenario.save();
-    return res.status(201).json(scenario);
+    return res.status(200).json(chat);
   } catch (err) {
-    console.error("Create scenario error:", err.message);
+    console.error("Save chat error:", err.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:clientChatId", async (req, res) => {
   try {
-    const scenario = await Scenario.findOneAndDelete({
-      _id: req.params.id,
+    const chat = await Chat.findOneAndDelete({
       owner: req.user.username,
+      clientChatId: req.params.clientChatId,
     });
 
-    if (!scenario) {
+    if (!chat) {
       return res.status(404).json({ error: "Not found" });
     }
 
     return res.status(200).json({ message: "Deleted" });
   } catch (err) {
-    console.error("Delete scenario error:", err.message);
+    console.error("Delete chat error:", err.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

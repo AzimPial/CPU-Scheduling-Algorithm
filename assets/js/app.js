@@ -5,7 +5,7 @@
  */
 
 import { ALGORITHMS, getActivePalette, setColorblindPalette } from './core/types.js';
-import { saveScenario, setScenarioCloudId, importScenarios, copyShareableLink, decodeState } from './core/storage.js';
+import { saveChat, setChatCloudId, importCloudChats, loadChats, copyShareableLink, decodeState } from './core/storage.js';
 import { getSettings, getSetting, getAnimationDuration, initSettings } from './core/settings.js';
 import { isLoggedIn, getUsername, clearAuth, apiFetch } from './core/api.js';
 import { run as runFCFS } from './algorithms/fcfs.js';
@@ -83,7 +83,7 @@ const ALGO_RUNNERS = {
 };
 
 let currentMode = 'visualize';
-let currentSessionId = null;
+let currentChatId = null;
 let lastResult = null;
 let lastRunData = null;
 let activeCharts = [];
@@ -145,17 +145,33 @@ function init() {
   }
 
   const sidebar = createSidebar(sidebarEl, {
-    onLoad: (scenario) => {
-      const s = scenario.state;
-      currentMode = s.mode || 'visualize';
-      updateModeTabs(currentMode);
-      inputBar.setMode(currentMode);
-      inputBar.setAlgorithm(s.algorithm || 'fcfs');
-      if (s.selectedAlgorithms) inputBar.setSelectedAlgorithms(s.selectedAlgorithms);
-      if (s.options?.quantum) inputBar.setQuantum(s.options.quantum);
-      if (s.processes) inputBar.setProcesses(s.processes);
-      currentSessionId = scenario.id;
-      sidebar.highlightActive(currentSessionId);
+    onLoad: (chatData) => {
+      currentChatId = chatData.id;
+      chat.clear();
+      sidebar.highlightActive(currentChatId);
+
+      chat.setMessagesData(chatData.messages || []);
+
+      for (const msg of chatData.messages || []) {
+        if (msg.role === 'user') {
+          chat.addUserMessage(msg.content, msg.summary);
+        } else if (msg.role === 'assistant') {
+          if (msg.result) {
+            if (msg.mode === 'compare') {
+              renderComparison(msg.algorithm, msg.options, msg.processes, chat, msg.result);
+            } else {
+              renderSingle(msg.algorithm, msg.options, msg.processes, chat, msg.result);
+            }
+          } else if (msg.algorithm) {
+            if (msg.mode === 'compare') {
+              renderComparison(msg.algorithm, msg.options, msg.processes, chat);
+            } else {
+              renderSingle(msg.algorithm, msg.options, msg.processes, chat);
+            }
+          }
+        }
+      }
+
       closeModal();
       if (sidebarOverlay) sidebarOverlay.classList.remove('active');
     },
@@ -184,7 +200,21 @@ function init() {
   });
 
   function resetToWelcome(chat, inputBar, sidebar) {
-    currentSessionId = null;
+    if (currentChatId) {
+      const msgs = chat.getMessagesData();
+      if (msgs.length > 0) {
+        const title = msgs.find(m => m.role === 'user')?.content || 'New chat';
+        saveChat({
+          id: currentChatId,
+          title: title.substring(0, 60),
+          timestamp: Date.now(),
+          messages: msgs,
+        });
+        if (isLoggedIn()) syncChatToCloud(currentChatId);
+      }
+    }
+
+    currentChatId = null;
     lastRunData = null;
     lastResult = null;
     chat.clear();
@@ -250,7 +280,7 @@ function init() {
 
   initAuthUI();
 
-  if (isLoggedIn()) loadCloudScenarios(sidebar);
+  if (isLoggedIn()) loadCloudChats(sidebar);
 
   const landing = getSetting('defaultLanding');
   if (!urlState && (landing === 'visualize' || landing === 'compare')) {
@@ -364,6 +394,10 @@ function executeAndRender(runData, chat, inputBar) {
   const { algorithm, options, processes, mode } = runData;
   lastRunData = runData;
 
+  if (!currentChatId) {
+    currentChatId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
   let summaryText = '';
   if (mode === 'compare') {
     const names = algorithm.map(k => ALGORITHMS[k]?.name || k).join(', ');
@@ -389,75 +423,56 @@ function executeAndRender(runData, chat, inputBar) {
     renderSingle(algorithm, options, processes, chat);
   }
 
-  const state = { algorithm, options, processes, mode, selectedAlgorithms: mode === 'compare' ? algorithm : undefined };
-  const scenario = saveScenario(summaryText, state);
-  currentSessionId = scenario.id;
+  const msgs = chat.getMessagesData();
+  const title = msgs.find(m => m.role === 'user')?.content || summaryText;
+  const chatObj = {
+    id: currentChatId,
+    title: title.substring(0, 60),
+    timestamp: Date.now(),
+    messages: msgs,
+  };
+  saveChat(chatObj);
 
   document.dispatchEvent(new CustomEvent('schedviz:sidebar-refresh'));
 
   const sidebarList = document.querySelector('.sidebar-list');
   if (sidebarList) {
     sidebarList.querySelectorAll('.sidebar-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.id === scenario.id);
+      el.classList.toggle('active', el.dataset.id === currentChatId);
     });
   }
 
-  if (isLoggedIn()) syncScenarioToCloud(state, scenario.id);
+  if (isLoggedIn()) syncChatToCloud(currentChatId);
 }
 
-async function syncScenarioToCloud(state, localId) {
-  const name = state.mode === 'compare'
-    ? `Compare: ${state.algorithm.map(k => ALGORITHMS[k]?.name || k).join(', ')}`
-    : `Algorithm: ${ALGORITHMS[state.algorithm]?.fullName || state.algorithm}`;
-  const { data, error } = await apiFetch('POST', '/api/scenarios', {
-    name,
-    algorithm: JSON.stringify(state.algorithm),
-    options: state.options || {},
-    processes: state.processes
+async function syncChatToCloud(chatId) {
+  const chats = loadChats();
+  const chatObj = chats.find(c => c.id === chatId);
+  if (!chatObj) return;
+
+  const { error } = await apiFetch('POST', '/api/scenarios', {
+    clientChatId: chatId,
+    title: chatObj.title,
+    messages: chatObj.messages,
   });
-  if (error) {
-    // Silent: app must remain fully usable when backend is unreachable.
-    return;
-  }
-  if (data?._id && localId) setScenarioCloudId(localId, data._id);
+  if (!error) setChatCloudId(chatId);
 }
 
-/* ---- Cloud scenario loading ---- */
-async function loadCloudScenarios(sidebar) {
+/* ---- Cloud chat loading ---- */
+async function loadCloudChats(sidebar) {
   if (!isLoggedIn()) return;
   const { data, error } = await apiFetch('GET', '/api/scenarios');
   if (error || !Array.isArray(data)) return;
-
-  const cloudScenarios = data.map((s) => {
-    let algorithm = s.algorithm;
-    try { algorithm = JSON.parse(s.algorithm); } catch { /* keep raw */ }
-    const isCompare = Array.isArray(algorithm);
-    return {
-      id: s._id,
-      cloudId: s._id,
-      name: s.name,
-      timestamp: s.createdAt ? new Date(s.createdAt).getTime() : Date.now(),
-      state: {
-        algorithm,
-        options: s.options || {},
-        processes: Array.isArray(s.processes) ? s.processes : [],
-        mode: isCompare ? 'compare' : 'visualize',
-        selectedAlgorithms: isCompare ? algorithm : undefined,
-      },
-      source: 'cloud'
-    };
-  });
-
-  importScenarios(cloudScenarios);
+  importCloudChats(data);
   sidebar.refresh();
 }
 
 /* ---- renderSingle (Module 1) ---- */
-function renderSingle(algorithmKey, options, processes, chat) {
+function renderSingle(algorithmKey, options, processes, chat, precomputedResult) {
   const runner = ALGO_RUNNERS[algorithmKey];
   if (!runner) return;
 
-  const result = runner(processes, options);
+  const result = precomputedResult || (() => { const r = runner(processes, options); r.algorithmKey = algorithmKey; return r; })();
   lastResult = result;
 
   const algoInfo = ALGORITHMS[algorithmKey];
@@ -479,7 +494,6 @@ function renderSingle(algorithmKey, options, processes, chat) {
     actionsBar.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;';
     actionsBar.innerHTML = `
       <button class="btn btn-sm btn-ghost info-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> About</button>
-      <button class="btn btn-sm btn-ghost save-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save</button>
       <button class="btn btn-sm btn-ghost export-csv-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> CSV</button>
     `;
     body.appendChild(actionsBar);
@@ -488,13 +502,6 @@ function renderSingle(algorithmKey, options, processes, chat) {
     actionsBar.querySelector('.export-csv-btn')?.addEventListener('click', () => {
       const csv = resultsToCSV(result, algorithmKey);
       downloadCSV(csv, `${result.algorithm.replace(/[^a-z0-9]/gi, '_')}_results.csv`);
-    });
-    actionsBar.querySelector('.save-btn')?.addEventListener('click', () => {
-      const name = prompt('Save as:', result.algorithm);
-      if (name) {
-        saveScenario(name, { algorithm: algorithmKey, options, processes, mode: 'visualize' });
-        document.dispatchEvent(new CustomEvent('schedviz:sidebar-refresh'));
-      }
     });
 
     createShareExportPopover(body, { result, algorithmKey, processes, options, mode: 'visualize' });
@@ -519,6 +526,15 @@ function renderSingle(algorithmKey, options, processes, chat) {
     });
 
     renderResultContent(resultRegion, algorithmKey, options, processes, result);
+  },
+  {
+    role: 'assistant',
+    algorithm: algorithmKey,
+    options,
+    processes,
+    mode: 'visualize',
+    result,
+    content: `Algorithm: ${result.algorithm} completed.`
   });
 
   liveReRun = function (procs) {
@@ -627,8 +643,8 @@ function destroyCharts() {
 }
 
 /* ---- renderComparison (Module 2) ---- */
-function renderComparison(algorithmKeys, options, processes, chat) {
-  const results = algorithmKeys.map(key => {
+function renderComparison(algorithmKeys, options, processes, chat, precomputedResults) {
+  const results = precomputedResults || algorithmKeys.map(key => {
     const runner = ALGO_RUNNERS[key];
     if (!runner) return null;
     const r = runner(processes, options);
@@ -693,6 +709,15 @@ function renderComparison(algorithmKeys, options, processes, chat) {
       resultRegion.innerHTML = '';
       renderComparisonContent(resultRegion, algorithmKeys, options, procs, newResults);
     }
+  },
+  {
+    role: 'assistant',
+    algorithm: algorithmKeys,
+    options,
+    processes,
+    mode: 'compare',
+    result: results,
+    content: `Compared ${results.length} algorithms.`
   });
 }
 

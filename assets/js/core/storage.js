@@ -3,14 +3,10 @@
  * @module core/storage
  */
 
-const STORAGE_KEY = 'algo_scenarios';
+const CHATS_KEY = 'algo_chats';
+const LEGACY_SCENARIOS_KEY = 'algo_scenarios';
 const THEME_KEY = 'algo_theme';
 
-/**
- * Encode current state as a base64 URL parameter.
- * @param {Object} state - {algorithm, options, processes}
- * @returns {string} Query string like ?s=...
- */
 export function encodeState(state) {
   try {
     const json = JSON.stringify(state);
@@ -21,10 +17,6 @@ export function encodeState(state) {
   }
 }
 
-/**
- * Decode state from URL query parameter.
- * @returns {Object|null} Parsed state or null
- */
 export function decodeState() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -33,30 +25,18 @@ export function decodeState() {
     const decoded = decodeURIComponent(s);
     const json = decodeURIComponent(escape(atob(decoded)));
     const state = JSON.parse(json);
-    if (state.autoRun) {
-      state.autoRun = true;
-    }
+    if (state.autoRun) state.autoRun = true;
     return state;
   } catch {
     return null;
   }
 }
 
-/**
- * Get the full shareable URL with encoded state.
- * @param {Object} state
- * @returns {string}
- */
 export function getShareableURL(state) {
   const qs = encodeState(state);
   return window.location.origin + window.location.pathname + qs;
 }
 
-/**
- * Copy shareable URL to clipboard.
- * @param {Object} state
- * @returns {Promise<boolean>} success
- */
 export async function copyShareableLink(state) {
   const url = getShareableURL(state);
   try {
@@ -76,12 +56,12 @@ export async function copyShareableLink(state) {
 }
 
 /**
- * Load saved scenarios from localStorage.
- * @returns {Array<{id: string, name: string, timestamp: number, state: Object}>}
+ * Load chats from localStorage.
+ * @returns {Array<Object>} Array of {id, cloudId?, title, timestamp, messages}
  */
-export function loadScenarios() {
+export function loadChats() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(CHATS_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -89,72 +69,111 @@ export function loadScenarios() {
 }
 
 /**
- * Save a scenario to localStorage.
- * @param {string} name
- * @param {Object} state
- * @returns {Object} The saved scenario object
+ * Save/update a single chat.
  */
-export function saveScenario(name, state) {
-  const scenarios = loadScenarios();
-  const scenario = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    name,
-    timestamp: Date.now(),
-    state,
-    source: 'local'
-  };
-  scenarios.unshift(scenario);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
-  return scenario;
+export function saveChat(chat) {
+  const chats = loadChats();
+  const idx = chats.findIndex(c => c.id === chat.id);
+  if (idx >= 0) {
+    chats[idx] = chat;
+  } else {
+    chats.unshift(chat);
+  }
+  localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
 }
 
 /**
- * Delete a saved scenario (localStorage only).
- * @param {string} id
+ * Delete a chat.
  */
-export function deleteScenario(id) {
-  const scenarios = loadScenarios().filter(s => s.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
+export function deleteChat(id) {
+  const chats = loadChats().filter(c => c.id !== id);
+  localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
 }
 
 /**
- * Import cloud scenarios into localStorage, deduping by cloudId.
- * Cloud copies win over local ones with the same cloudId; local-only
- * scenarios are preserved. Newest first.
- * @param {Array<Object>} cloudList - Scenarios in local shape (id, cloudId, name, timestamp, state)
- * @returns {Array<Object>}
+ * Import cloud chats, deduping by clientChatId. Cloud wins; local-only preserved.
  */
-export function importScenarios(cloudList) {
-  const local = loadScenarios();
-  const cloudIds = new Set(cloudList.filter(s => s.cloudId).map(s => s.cloudId));
-  const kept = local.filter(s => !cloudIds.has(s.cloudId));
-  const merged = [...kept, ...cloudList].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+export function importCloudChats(cloudList) {
+  const local = loadChats();
+  const cloudIds = new Set(cloudList.map(c => c.clientChatId));
+  const kept = local.filter(c => !cloudIds.has(c.id));
+  const imported = cloudList.map(c => ({
+    id: c.clientChatId,
+    cloudId: c.clientChatId,
+    title: c.title || 'New chat',
+    timestamp: c.updatedAt ? new Date(c.updatedAt).getTime() : Date.now(),
+    messages: Array.isArray(c.messages) ? c.messages : [],
+  }));
+  const merged = [...kept, ...imported].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  localStorage.setItem(CHATS_KEY, JSON.stringify(merged));
   return merged;
 }
 
 /**
- * Attach the backend id to a locally saved scenario once it is synced to cloud.
- * @param {string} id - Local scenario id
- * @param {string} cloudId - Backend _id
+ * Set cloudId on a chat after cloud sync.
  */
-export function setScenarioCloudId(id, cloudId) {
-  const scenarios = loadScenarios().map(s => (s.id === id ? { ...s, cloudId, source: 'cloud' } : s));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
+export function setChatCloudId(id) {
+  const chats = loadChats().map(c => (c.id === id ? { ...c, cloudId: c.id } : c));
+  localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
 }
 
 /**
- * Get theme preference.
- * @returns {'dark'|'light'}
+ * Migrate old single-run scenarios into chats (one-time).
  */
+function migrateLegacyScenarios() {
+  try {
+    const raw = localStorage.getItem(LEGACY_SCENARIOS_KEY);
+    if (!raw) return;
+    const oldScenarios = JSON.parse(raw);
+    if (!Array.isArray(oldScenarios) || oldScenarios.length === 0) return;
+
+    const chats = loadChats();
+    const existingIds = new Set(chats.map(c => c.id));
+
+    for (const s of oldScenarios) {
+      if (existingIds.has(s.id)) continue;
+      const st = s.state || {};
+      const isCompare = st.mode === 'compare';
+      const algorithm = isCompare ? (Array.isArray(st.selectedAlgorithms) ? st.selectedAlgorithms : [st.algorithm]) : st.algorithm;
+      const algoName = isCompare ? (Array.isArray(algorithm) ? algorithm.join(', ') : 'Compare') : algorithm;
+
+      chats.push({
+        id: s.id,
+        title: s.name || `Algorithm: ${algoName}`,
+        timestamp: s.timestamp || Date.now(),
+        messages: [
+          {
+            role: 'user',
+            content: s.name || `Run ${algoName}`,
+            summary: '',
+          },
+          {
+            role: 'assistant',
+            content: s.name || `Algorithm: ${algoName}`,
+            algorithm,
+            options: st.options || {},
+            processes: st.processes || [],
+            mode: st.mode || 'visualize',
+            selectedAlgorithms: isCompare ? algorithm : undefined,
+            result: null,
+          },
+        ],
+      });
+    }
+
+    chats.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
+  } catch {
+    // Migration best-effort; silently ignore errors.
+  }
+}
+
+migrateLegacyScenarios();
+
 export function getTheme() {
   return localStorage.getItem(THEME_KEY) || 'light';
 }
 
-/**
- * Set theme preference.
- * @param {'dark'|'light'} theme
- */
 export function setTheme(theme) {
   localStorage.setItem(THEME_KEY, theme);
 }
