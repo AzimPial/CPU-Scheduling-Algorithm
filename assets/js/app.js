@@ -158,10 +158,12 @@ function init() {
       const messages = chatData.messages || [];
       let idx = 0;
       chat.suppressScroll(true);
+      chat.setRebuilding(true);
 
       function renderNext() {
         if (token !== restoreGen) return;
         if (idx >= messages.length) {
+          chat.setRebuilding(false);
           chat.suppressScroll(false);
           closeModal();
           if (sidebarOverlay) sidebarOverlay.classList.remove('active');

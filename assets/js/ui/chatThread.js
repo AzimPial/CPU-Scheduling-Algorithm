@@ -7,6 +7,7 @@
 export function createChatThread(threadEl, messagesEl) {
   let messagesData = [];
   let _scrollSuppressed = false;
+  let _rebuilding = false;
 
   function isNearBottom() {
     return threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 180;
@@ -38,7 +39,7 @@ export function createChatThread(threadEl, messagesEl) {
   }
 
   function addUserMessage(text, summary) {
-    messagesData.push({ role: 'user', content: text, summary: summary || '' });
+    if (!_rebuilding) messagesData.push({ role: 'user', content: text, summary: summary || '' });
 
     const msg = document.createElement('div');
     msg.className = 'msg msg-user';
@@ -57,7 +58,7 @@ export function createChatThread(threadEl, messagesEl) {
   }
 
   function addAssistantMessage(contentFn, data) {
-    if (data) messagesData.push(data);
+    if (data && !_rebuilding) messagesData.push(data);
 
     const msg = document.createElement('div');
     msg.className = 'msg msg-assistant';
@@ -150,6 +151,11 @@ export function createChatThread(threadEl, messagesEl) {
     messagesData = messages || [];
   }
 
+  function setRebuilding(on) {
+    _rebuilding = on;
+    if (!on) _scrollSuppressed = false;
+  }
+
   return {
     addUserMessage,
     addAssistantMessage,
@@ -157,6 +163,7 @@ export function createChatThread(threadEl, messagesEl) {
     clear,
     scrollToBottom,
     suppressScroll,
+    setRebuilding,
     getMessages,
     getMessagesData,
     setMessagesData,
