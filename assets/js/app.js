@@ -152,28 +152,45 @@ function init() {
 
       chat.setMessagesData(chatData.messages || []);
 
-      for (const msg of chatData.messages || []) {
+      const messages = chatData.messages || [];
+      let idx = 0;
+      chat.suppressScroll(true);
+
+      function renderNext() {
+        if (idx >= messages.length) {
+          chat.suppressScroll(false);
+          chat.scrollToBottom();
+          closeModal();
+          if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+          return;
+        }
+        const msg = messages[idx++];
         if (msg.role === 'user') {
           chat.addUserMessage(msg.content, msg.summary);
+          renderNext();
         } else if (msg.role === 'assistant') {
           if (msg.result) {
             if (msg.mode === 'compare') {
-              renderComparison(msg.algorithm, msg.options, msg.processes, chat, msg.result);
+              renderComparison(msg.algorithm, msg.options, msg.processes, chat, msg.result, true);
             } else {
-              renderSingle(msg.algorithm, msg.options, msg.processes, chat, msg.result);
+              renderSingle(msg.algorithm, msg.options, msg.processes, chat, msg.result, true);
             }
+            requestAnimationFrame(renderNext);
           } else if (msg.algorithm) {
             if (msg.mode === 'compare') {
-              renderComparison(msg.algorithm, msg.options, msg.processes, chat);
+              renderComparison(msg.algorithm, msg.options, msg.processes, chat, undefined, true);
             } else {
-              renderSingle(msg.algorithm, msg.options, msg.processes, chat);
+              renderSingle(msg.algorithm, msg.options, msg.processes, chat, undefined, true);
             }
+            requestAnimationFrame(renderNext);
+          } else {
+            renderNext();
           }
+        } else {
+          renderNext();
         }
       }
-
-      closeModal();
-      if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+      requestAnimationFrame(renderNext);
     },
     onDelete: (cloudId) => {
       apiFetch('DELETE', `/api/scenarios/${encodeURIComponent(cloudId)}`);
@@ -468,7 +485,7 @@ async function loadCloudChats(sidebar) {
 }
 
 /* ---- renderSingle (Module 1) ---- */
-function renderSingle(algorithmKey, options, processes, chat, precomputedResult) {
+function renderSingle(algorithmKey, options, processes, chat, precomputedResult, restoreMode) {
   const runner = ALGO_RUNNERS[algorithmKey];
   if (!runner) return;
 
@@ -525,7 +542,7 @@ function renderSingle(algorithmKey, options, processes, chat, precomputedResult)
       onReset: null
     });
 
-    renderResultContent(resultRegion, algorithmKey, options, processes, result);
+    renderResultContent(resultRegion, algorithmKey, options, processes, result, restoreMode);
   },
   {
     role: 'assistant',
@@ -553,7 +570,7 @@ function renderSingle(algorithmKey, options, processes, chat, precomputedResult)
   };
 }
 
-function renderResultContent(region, algorithmKey, options, processes, result) {
+function renderResultContent(region, algorithmKey, options, processes, result, restoreMode) {
   const resultCard = document.createElement('div');
   resultCard.className = 'result-card';
 
@@ -561,7 +578,7 @@ function renderResultContent(region, algorithmKey, options, processes, result) {
   ganttWrapper.className = 'gantt-container';
   resultCard.appendChild(ganttWrapper);
 
-  const ganttResult = renderGantt(ganttWrapper, result);
+  const ganttResult = renderGantt(ganttWrapper, result, { animate: !restoreMode });
   const traceWrapper = document.createElement('div');
   resultCard.appendChild(traceWrapper);
   createTraceControls(traceWrapper, result, ganttWrapper, processes);
@@ -643,7 +660,7 @@ function destroyCharts() {
 }
 
 /* ---- renderComparison (Module 2) ---- */
-function renderComparison(algorithmKeys, options, processes, chat, precomputedResults) {
+function renderComparison(algorithmKeys, options, processes, chat, precomputedResults, restoreMode) {
   const results = precomputedResults || algorithmKeys.map(key => {
     const runner = ALGO_RUNNERS[key];
     if (!runner) return null;
@@ -680,7 +697,7 @@ function renderComparison(algorithmKeys, options, processes, chat, precomputedRe
     resultRegion.className = 'result-region';
     body.appendChild(resultRegion);
 
-    renderComparisonContent(resultRegion, algorithmKeys, options, processes, results);
+    renderComparisonContent(resultRegion, algorithmKeys, options, processes, results, restoreMode);
 
     const editorSection = document.createElement('div');
     editorSection.className = 'results-editor';
@@ -721,7 +738,7 @@ function renderComparison(algorithmKeys, options, processes, chat, precomputedRe
   });
 }
 
-function renderComparisonContent(region, algorithmKeys, options, processes, results) {
+function renderComparisonContent(region, algorithmKeys, options, processes, results, restoreMode) {
   const ganttGroup = document.createElement('div');
   ganttGroup.className = 'comparison-gantt-group';
   region.appendChild(ganttGroup);
@@ -741,10 +758,10 @@ function renderComparisonContent(region, algorithmKeys, options, processes, resu
     item.appendChild(ganttContainer);
     ganttGroup.appendChild(item);
 
-    renderGantt(ganttContainer, result, { maxWidth: 800 });
+    renderGantt(ganttContainer, result, { maxWidth: 800, animate: !restoreMode });
   });
 
-  renderComparisonCharts(region, results);
+  renderComparisonCharts(region, results, restoreMode);
 
   renderVerdictCard(region, results, processes);
 
@@ -764,7 +781,7 @@ function renderComparisonContent(region, algorithmKeys, options, processes, resu
   region.appendChild(rankTable);
 }
 
-function renderComparisonCharts(region, results) {
+function renderComparisonCharts(region, results, restoreMode) {
   const chartsGrid = document.createElement('div');
   chartsGrid.className = 'charts-grid';
   chartsGrid.style.marginTop = '16px';
@@ -802,6 +819,7 @@ function renderComparisonCharts(region, results) {
         options: {
           responsive: true,
           maintainAspectRatio: true,
+          animation: restoreMode ? false : undefined,
           plugins: { legend: { display: false } },
           scales: {
             y: { beginAtZero: true, grid: { color: 'rgba(128,128,128,0.12)' }, ticks: { color: 'var(--text-muted)', font: { family: 'JetBrains Mono', size: 10 } } },
@@ -842,6 +860,7 @@ function renderComparisonCharts(region, results) {
       options: {
         responsive: true,
         maintainAspectRatio: true,
+        animation: restoreMode ? false : undefined,
         plugins: {
           legend: { position: 'top', labels: { font: { family: 'Inter', size: 10 }, color: 'var(--text-muted)' } }
         },

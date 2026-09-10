@@ -6,11 +6,17 @@
 
 export function createChatThread(threadEl, messagesEl) {
   let messagesData = [];
+  let _scrollSuppressed = false;
 
   function scrollToBottom() {
+    if (_scrollSuppressed) return;
     requestAnimationFrame(() => {
       threadEl.scrollTop = threadEl.scrollHeight;
     });
+  }
+
+  function suppressScroll(on) {
+    _scrollSuppressed = on;
   }
 
   function addUserMessage(text, summary) {
@@ -132,6 +138,7 @@ export function createChatThread(threadEl, messagesEl) {
     addWelcomeCard,
     clear,
     scrollToBottom,
+    suppressScroll,
     getMessages,
     getMessagesData,
     setMessagesData,
