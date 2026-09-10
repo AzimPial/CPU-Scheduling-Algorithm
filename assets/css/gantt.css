@@ -9,32 +9,22 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* ---- Per-process row ---- */
-.gantt-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: 4px;
-}
-.gantt-row-label {
-  width: 60px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-align: right;
-  padding-right: 12px;
-  flex-shrink: 0;
-}
-.gantt-row-bar-area {
-  flex: 1;
-  height: 28px;
+/* ---- Chart root ---- */
+.gantt-chart {
   position: relative;
-  border-radius: var(--radius-sm);
+  min-width: 400px;
+}
+
+/* ---- Bars row ---- */
+.gantt-bars {
+  position: relative;
+  height: 28px;
 }
 
 /* ---- Block ---- */
 .gantt-block {
   position: absolute;
+  top: 0;
   height: 28px;
   border-radius: 6px;
   display: flex;
@@ -50,7 +40,7 @@
 }
 
 /* ---- Block label ---- */
-.gantt-block span {
+.gantt-block .block-label {
   color: #fff;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
@@ -83,9 +73,18 @@
   display: block;
 }
 
+.gantt-tooltip .tt-proc {
+  display: block;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.gantt-tooltip .tt-time {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 /* ---- Idle block ---- */
-.gantt-block.idle-block {
-  background: var(--gantt-idle-bg);
+.gantt-block.idle {
   background-image: repeating-linear-gradient(
     45deg,
     transparent,
@@ -95,24 +94,32 @@
   );
   opacity: 0.6;
 }
-.gantt-block.idle-block span {
+.gantt-block.idle .block-label {
   color: var(--text-muted);
 }
 
 /* ---- Enter animation ---- */
 .gantt-block.entering {
-  animation: ganttSlideIn 300ms ease-out both;
+  transform-origin: left center;
+  animation: ganttGrowX 320ms ease-out both;
 }
-@keyframes ganttSlideIn {
-  from { width: 0; }
-  to   { width: var(--block-width); }
+@keyframes ganttGrowX {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gantt-block.entering {
+    animation: none;
+  }
 }
 
 /* ---- Trace mode states ---- */
-.gantt-block.dimmed {
+.gantt-block.dimmed,
+.gantt-block.trace-dimmed {
   opacity: 0.25;
 }
-.gantt-block.active {
+.gantt-block.active,
+.gantt-block.trace-active {
   opacity: 1;
   box-shadow: 0 0 0 2px #fff, 0 2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -124,14 +131,14 @@
   margin-top: 4px;
   border-top: 1px solid var(--border-subtle);
 }
-.gantt-axis .tick {
+.gantt-axis .gantt-tick {
   position: absolute;
   top: 0;
   width: 1px;
   height: 8px;
   background: var(--border-color);
 }
-.gantt-axis .tick-label {
+.gantt-axis .gantt-tick span {
   position: absolute;
   top: 10px;
   font-family: 'JetBrains Mono', monospace;

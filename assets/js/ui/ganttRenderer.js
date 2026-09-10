@@ -40,10 +40,11 @@ export function renderGantt(container, result, options = {}) {
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  let html = '<div class="gantt-chart">';
+  let html = `<div class="gantt-chart" style="width:${chartWidth}px">`;
 
   html += '<div class="gantt-bars">';
   gantt.forEach((block, idx) => {
+    const left = block.start * pxPerUnit;
     const width = (block.end - block.start) * pxPerUnit;
     const isIdle = block.processId === 'IDLE';
     const color = isIdle ? 'var(--idle-color)' : (procColorMap.get(block.processId) || '#888');
@@ -51,7 +52,7 @@ export function renderGantt(container, result, options = {}) {
     const delay = animate && !reducedMotion ? `animation-delay:${idx * 80}ms` : '';
 
     html += `<div class="gantt-block${isIdle ? ' idle' : ' process'}${animClass}" `;
-    html += `style="width:${width}px;background-color:${color};${delay}" `;
+    html += `style="left:${left}px;width:${width}px;background-color:${color};${delay}" `;
     html += `data-pid="${block.processId}" data-start="${block.start}" data-end="${block.end}" `;
     html += `role="img" aria-label="${block.processId} from ${block.start} to ${block.end}">`;
 

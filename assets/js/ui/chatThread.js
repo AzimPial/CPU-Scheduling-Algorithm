@@ -8,15 +8,26 @@ export function createChatThread(threadEl, messagesEl) {
   let messagesData = [];
   let _scrollSuppressed = false;
 
+  function isNearBottom() {
+    return threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 180;
+  }
+
   function scrollToBottom() {
     if (_scrollSuppressed) return;
+    if (!isNearBottom()) return;
     requestAnimationFrame(() => {
+      if (_scrollSuppressed) return;
+      threadEl.style.scrollBehavior = 'auto';
       threadEl.scrollTop = threadEl.scrollHeight;
+      threadEl.style.scrollBehavior = '';
     });
   }
 
   function suppressScroll(on) {
     _scrollSuppressed = on;
+    if (!on) {
+      requestAnimationFrame(() => scrollToBottom());
+    }
   }
 
   function addUserMessage(text, summary) {

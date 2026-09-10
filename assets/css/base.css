@@ -70,6 +70,7 @@
   --success: #27AE60;
   --warning: #D4A843;
   --idle: #BDC3C7;
+  --idle-color: #E0DED6;
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -130,6 +131,7 @@
   --success: #2ECC71;
   --warning: #E8C558;
   --idle: #56544E;
+  --idle-color: #4A4844;
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.2);
