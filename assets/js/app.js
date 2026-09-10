@@ -87,6 +87,7 @@ let currentChatId = null;
 let lastResult = null;
 let lastRunData = null;
 let activeCharts = [];
+let restoreGen = 0;
 
 function debounce(fn, ms) {
   let t;
@@ -146,6 +147,8 @@ function init() {
 
   const sidebar = createSidebar(sidebarEl, {
     onLoad: (chatData) => {
+      const token = ++restoreGen;
+      destroyCharts();
       currentChatId = chatData.id;
       chat.clear();
       sidebar.highlightActive(currentChatId);
@@ -157,9 +160,9 @@ function init() {
       chat.suppressScroll(true);
 
       function renderNext() {
+        if (token !== restoreGen) return;
         if (idx >= messages.length) {
           chat.suppressScroll(false);
-          chat.scrollToBottom();
           closeModal();
           if (sidebarOverlay) sidebarOverlay.classList.remove('active');
           return;
@@ -217,6 +220,8 @@ function init() {
   });
 
   function resetToWelcome(chat, inputBar, sidebar) {
+    restoreGen++;
+    destroyCharts();
     if (currentChatId) {
       const msgs = chat.getMessagesData();
       if (msgs.length > 0) {
