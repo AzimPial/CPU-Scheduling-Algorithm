@@ -3,11 +3,11 @@
 This project has two parts:
 
 1. **Frontend (static site)** → hosted free on **GitHub Pages** at `https://azimpial.github.io/CPU-Scheduling-Algorithm/`
-2. **Backend API (+ database)** → hosts data, login, and cloud scenarios
+2. **Backend API (+ database)** → hosts user accounts, cloud sync, and settings persistence
 
 The backend is split into:
 
-- **Database:** MongoDB Atlas (M0, free, 512 MB) — stores users, scenarios, settings
+- **Database:** MongoDB Atlas (M0, free, 512 MB) — stores users, chats, and settings
 - **API server:** Express (Node.js) in `backend/`, deployed on **Render** (free tier) — the only piece that talks to the database
 
 > GitHub Pages can only serve static files. It cannot run Node.js. MongoDB Atlas is a database only (its old "Data API" was removed Sep 2025). So the API server must run somewhere — Render free tier runs the existing `backend/` code with zero ongoing cost.
@@ -98,8 +98,8 @@ Change that constant, commit, push — GitHub Pages rebuilds automatically.
 1. Backend: open `https://<your-app>.onrender.com/api/health` → `{"status":"ok"}`
 2. Frontend (published site):
    - **Log in / Sign up** → profile chip appears in the top bar
-   - Run an algorithm → your last run saves as a **Cloud** scenario
-   - **Settings** → change theme/decimal precision → sign in on another browser → settings persist & scenarios are listed
+   - Run an algorithm → your conversation appears in the sidebar and syncs to the cloud
+   - **Settings** → change theme/decimal precision → sign in on another browser → settings persist and your chats are listed across devices
 3. `GET /api/health` returns `ok` from an external device too (proves CORS is fine).
 
 ---
