@@ -2,6 +2,13 @@
 
 *Watch your algorithms think.*
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-2ea44f)](https://azimpial.github.io/CPU-Scheduling-Algorithm/)
+[![API](https://img.shields.io/badge/API-Render%20%C2%B7%20MongoDB-0969da)](https://algo-backend-lia7.onrender.com/api/health)
+[![Algorithms](https://img.shields.io/badge/algorithms-30-f97316)](https://azimpial.github.io/CPU-Scheduling-Algorithm/)
+[![Tests](https://img.shields.io/badge/tests-329%20passing-a3be8c)](https://raw.githubusercontent.com/AzimPial/CPU-Scheduling-Algorithm/main/tests/run.mjs)
+[![Zero Dependencies](https://img.shields.io/badge/build-none%20%7C%20zero%20deps-556b8e)](https://github.com/AzimPial/CPU-Scheduling-Algorithm/blob/main/README.md#tech-stack)
+[![License: MIT](https://img.shields.io/badge/license-MIT-6f42c1)](LICENSE)
+
 An interactive, chat-based web application for visualizing and comparing **30 CPU scheduling algorithms**, built for university operating systems courses. Configure a set of processes, run any algorithm (or several at once), and instantly see animated Gantt charts, full metrics, step-by-step traces, and automatic verdicts.
 
 ![Welcome](assets/screenshots/welcome.png)
