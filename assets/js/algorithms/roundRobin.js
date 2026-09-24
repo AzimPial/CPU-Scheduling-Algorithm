@@ -76,6 +76,10 @@ export function run(processes, options = {}) {
       }
     }
 
+    for (const id of newlyArrived) {
+      queue.push(id);
+    }
+
     if (remaining.get(currentId) === 0) {
       done.add(currentId);
       completionMap.set(currentId, {
@@ -84,9 +88,6 @@ export function run(processes, options = {}) {
         burstTime: currentProc.burstTime
       });
     } else {
-      for (const id of newlyArrived) {
-        queue.push(id);
-      }
       queue.push(currentId);
     }
   }
